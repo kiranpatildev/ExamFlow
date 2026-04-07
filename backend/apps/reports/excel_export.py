@@ -4,96 +4,161 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 
+def _header_style():
+    return {
+        'font': Font(name='Calibri', bold=True, color='FFFFFF', size=11),
+        'fill': PatternFill(start_color='1F3864', end_color='1F3864', fill_type='solid'),
+        'alignment': Alignment(horizontal='center', vertical='center', wrap_text=True),
+        'border': Border(
+            left=Side(style='thin'), right=Side(style='thin'),
+            top=Side(style='thin'), bottom=Side(style='thin'),
+        ),
+    }
+
+
+def _apply(cell, styles):
+    for k, v in styles.items():
+        setattr(cell, k, v)
+
+
 def generate_excel_report(results: list) -> BytesIO:
-    """
-    Generate an Excel report from evaluation results.
-    Returns a BytesIO object containing the .xlsx file.
-    """
+    """Consolidated report — one row per evaluated answer sheet."""
     wb = Workbook()
     ws = wb.active
     ws.title = "Evaluation Report"
 
-    # Styles
-    header_font = Font(name='Calibri', bold=True, color='FFFFFF', size=11)
-    header_fill = PatternFill(start_color='1F3864', end_color='1F3864', fill_type='solid')
-    header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    thin_border = Border(
-        left=Side(style='thin'),
-        right=Side(style='thin'),
-        top=Side(style='thin'),
-        bottom=Side(style='thin'),
-    )
-    center_align = Alignment(horizontal='center', vertical='center')
+    h = _header_style()
+    thin = h['border']
+    center = Alignment(horizontal='center', vertical='center')
 
-    # Report title row
+    # Title
     ws.merge_cells('A1:G1')
-    title_cell = ws['A1']
-    title_cell.value = 'ExamFlow — Evaluation Report'
-    title_cell.font = Font(name='Calibri', bold=True, size=14, color='1F3864')
-    title_cell.alignment = Alignment(horizontal='center', vertical='center')
+    _apply(ws['A1'], {
+        'value': 'ExamFlow — Consolidated Evaluation Report',
+        'font': Font(name='Calibri', bold=True, size=14, color='1F3864'),
+        'alignment': Alignment(horizontal='center', vertical='center'),
+    })
     ws.row_dimensions[1].height = 30
 
-    # Header row
-    headers = [
-        'Roll Number', 'Subject Name', 'Subject Code',
-        'Total Marks', 'Evaluated At', 'Sections Summary', 'Sections Total'
-    ]
-    for col_idx, header in enumerate(headers, start=1):
-        cell = ws.cell(row=2, column=col_idx, value=header)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = header_alignment
-        cell.border = thin_border
+    headers = ['Roll Number', 'Subject Name', 'Subject Code', 'Department',
+               'Semester', 'Total Marks', 'Evaluated At']
+    for ci, hdr in enumerate(headers, 1):
+        cell = ws.cell(row=2, column=ci, value=hdr)
+        _apply(cell, h)
     ws.row_dimensions[2].height = 22
 
-    # Data rows
-    for row_idx, result in enumerate(results, start=3):
-        sections = result.get('sections', [])
-        section_summary_parts = []
-        for s in sections:
-            s_name = s.get('section_name', '')
-            s_total = s.get('section_total', 0)
-            q_parts = [
-                f"Q{q.get('question_no')}: {q.get('marks_obtained', 0)}/{q.get('max_marks', 0)}"
-                for q in s.get('questions', [])
-            ]
-            section_summary_parts.append(f"{s_name} [{', '.join(q_parts)}]")
-
-        sections_total = sum(s.get('section_total', 0) for s in sections)
+    for ri, r in enumerate(results, 3):
+        row_fill = PatternFill(
+            start_color='F2F2F2' if ri % 2 == 0 else 'FFFFFF',
+            end_color='F2F2F2' if ri % 2 == 0 else 'FFFFFF',
+            fill_type='solid'
+        )
         data = [
-            result.get('roll_number', ''),
-            result.get('subject_name', ''),
-            result.get('subject_code', ''),
-            result.get('total_marks', ''),
-            result.get('evaluated_at', ''),
-            ' | '.join(section_summary_parts),
-            sections_total,
+            r.get('roll_number', ''), r.get('subject_name', ''),
+            r.get('subject_code', ''), r.get('department', ''),
+            r.get('semester', ''), r.get('total_marks', ''),
+            str(r.get('evaluated_at', ''))[:10],
         ]
-
-        fill_color = 'F2F2F2' if row_idx % 2 == 0 else 'FFFFFF'
-        row_fill = PatternFill(start_color=fill_color, end_color=fill_color, fill_type='solid')
-
-        for col_idx, value in enumerate(data, start=1):
-            cell = ws.cell(row=row_idx, column=col_idx, value=value)
-            cell.border = thin_border
+        for ci, val in enumerate(data, 1):
+            cell = ws.cell(row=ri, column=ci, value=val)
+            cell.border = thin
             cell.fill = row_fill
-            cell.alignment = center_align if col_idx in (1, 3, 4, 7) else Alignment(vertical='center', wrap_text=True)
+            cell.alignment = center if ci in (1, 3, 5, 6) else Alignment(vertical='center')
 
-    # Auto column width
-    for col_idx in range(1, len(headers) + 1):
-        col_letter = get_column_letter(col_idx)
-        max_length = 0
-        for row in ws.iter_rows(min_col=col_idx, max_col=col_idx):
-            for cell in row:
-                try:
-                    cell_len = len(str(cell.value)) if cell.value else 0
-                    max_length = max(max_length, cell_len)
-                except Exception:
-                    pass
-        ws.column_dimensions[col_letter].width = min(max_length + 4, 60)
+    for ci in range(1, len(headers) + 1):
+        max_len = max(
+            (len(str(ws.cell(row=r, column=ci).value or '')) for r in range(1, ws.max_row + 1)),
+            default=10
+        )
+        ws.column_dimensions[get_column_letter(ci)].width = min(max_len + 4, 50)
 
-    # Freeze header rows
     ws.freeze_panes = 'A3'
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
+
+def generate_student_report_excel(student_reports: list) -> BytesIO:
+    """
+    Student Report Card — one sheet per student (or all on one sheet grouped).
+    Shows each subject's marks and a grand total row.
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Student Report Cards"
+
+    h = _header_style()
+    thin = h['border']
+    center = Alignment(horizontal='center', vertical='center')
+
+    # Title
+    ws.merge_cells('A1:F1')
+    _apply(ws['A1'], {
+        'value': 'ExamFlow — Student Report Cards',
+        'font': Font(name='Calibri', bold=True, size=14, color='1F3864'),
+        'alignment': Alignment(horizontal='center', vertical='center'),
+    })
+    ws.row_dimensions[1].height = 30
+
+    current_row = 2
+    for student in student_reports:
+        roll = student['roll_number']
+
+        # Student header row
+        ws.merge_cells(f'A{current_row}:F{current_row}')
+        cell = ws.cell(row=current_row, column=1,
+                       value=f'Roll Number: {roll}  —  Subjects: {student["subject_count"]}')
+        cell.font = Font(name='Calibri', bold=True, size=12, color='FFFFFF')
+        cell.fill = PatternFill(start_color='2E4057', end_color='2E4057', fill_type='solid')
+        cell.alignment = Alignment(horizontal='left', vertical='center')
+        ws.row_dimensions[current_row].height = 22
+        current_row += 1
+
+        # Column headers
+        cols = ['Subject Code', 'Subject Name', 'Department', 'Semester', 'Total Marks', 'Evaluated At']
+        for ci, col in enumerate(cols, 1):
+            cell = ws.cell(row=current_row, column=ci, value=col)
+            _apply(cell, h)
+        ws.row_dimensions[current_row].height = 20
+        current_row += 1
+
+        # Subject rows
+        for subj in student['subjects']:
+            row_data = [
+                subj['subject_code'], subj['subject_name'], subj['department'],
+                subj['semester'], subj['total_marks'],
+                str(subj.get('evaluated_at', ''))[:10],
+            ]
+            fill = PatternFill(start_color='EBF3FB', end_color='EBF3FB', fill_type='solid')
+            for ci, val in enumerate(row_data, 1):
+                cell = ws.cell(row=current_row, column=ci, value=val)
+                cell.border = thin
+                cell.fill = fill
+                cell.alignment = center if ci in (1, 4, 5) else Alignment(vertical='center')
+            current_row += 1
+
+        # Grand total row
+        total_cell = ws.cell(row=current_row, column=4, value='GRAND TOTAL')
+        total_cell.font = Font(bold=True, color='1F3864')
+        total_cell.alignment = Alignment(horizontal='right', vertical='center')
+        total_cell.border = thin
+
+        gt_cell = ws.cell(row=current_row, column=5, value=student['grand_total'])
+        gt_cell.font = Font(bold=True, size=12, color='1F3864')
+        gt_cell.fill = PatternFill(start_color='D6E4F0', end_color='D6E4F0', fill_type='solid')
+        gt_cell.alignment = center
+        gt_cell.border = thin
+
+        current_row += 2  # blank row between students
+
+    # Auto column widths
+    for ci in range(1, 7):
+        max_len = max(
+            (len(str(ws.cell(row=r, column=ci).value or '')) for r in range(1, current_row)),
+            default=10
+        )
+        ws.column_dimensions[get_column_letter(ci)].width = min(max_len + 4, 50)
 
     output = BytesIO()
     wb.save(output)

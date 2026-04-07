@@ -22,6 +22,7 @@ import ExamDashboard from './pages/examdept/ExamDashboard';
 import AssignTeacher from './pages/examdept/AssignTeacher';
 import SchemeManager from './pages/examdept/SchemeManager';
 import Reports from './pages/examdept/Reports';
+import UserManagement from './pages/examdept/UserManagement';
 
 function RootRedirect() {
   const { auth } = useAuth();
@@ -98,6 +99,11 @@ export default function App() {
           <Route path="/exam-dept/assign" element={
             <ProtectedRoute requiredRole="exam_dept">
               <AssignTeacher />
+            </ProtectedRoute>
+          } />
+          <Route path="/exam-dept/users" element={
+            <ProtectedRoute requiredRole="exam_dept">
+              <UserManagement />
             </ProtectedRoute>
           } />
           <Route path="/exam-dept/schemes" element={

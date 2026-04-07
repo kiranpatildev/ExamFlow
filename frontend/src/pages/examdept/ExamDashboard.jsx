@@ -10,6 +10,7 @@ import BundleCard from '../../components/BundleCard';
 function Sidebar({ navigate, logout, auth }) {
   const items = [
     { icon: '🏠', label: 'Dashboard', path: '/exam-dept' },
+    { icon: '👥', label: 'Users', path: '/exam-dept/users' },
     { icon: '👩‍🏫', label: 'Assign Teachers', path: '/exam-dept/assign' },
     { icon: '📚', label: 'Subjects & Schemes', path: '/exam-dept/schemes' },
     { icon: '📊', label: 'Reports', path: '/exam-dept/reports' },

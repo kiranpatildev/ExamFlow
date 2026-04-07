@@ -1,0 +1,13 @@
+Django==4.2.16
+djangorestframework==3.14.0
+djangorestframework-simplejwt==5.3.1
+psycopg2-binary==2.9.9
+Pillow==10.4.0
+opencv-python-headless==4.10.0.84
+# pyzbar==0.1.9  # Optional: requires libzbar DLL on Windows. Install separately if needed.
+img2pdf==0.5.1
+openpyxl==3.1.5
+reportlab==4.2.2
+python-decouple==3.8
+django-cors-headers==4.4.0
+numpy==1.26.4

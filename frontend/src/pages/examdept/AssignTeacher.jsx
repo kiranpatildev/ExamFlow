@@ -20,7 +20,7 @@ export default function AssignTeacher() {
     setLoading(true);
     try {
       const [bRes, tRes] = await Promise.all([
-        getBundles({ status: 'submitted', page_size: 100 }),
+        getBundles({ page_size: 100 }),
         getTeachers(),
       ]);
       setBundles(bRes.data.results || []);
@@ -124,7 +124,9 @@ export default function AssignTeacher() {
                         <td style={{ fontWeight: 600 }}>#{b.bundle_number}</td>
                         <td style={{ color: '#64748b' }}>{b.total_sheets} sheets</td>
                         <td>
-                          {isAssigned ? (
+                          {b.status === 'open' ? (
+                            <span style={{ color: '#d97706', fontWeight: 600, fontSize: '13px' }}>Scanning...</span>
+                          ) : isAssigned ? (
                             <span style={{ color: 'var(--color-indigo)', fontWeight: 600, fontSize: '13px' }}>
                               Assigned → {b.assigned_teacher_name}
                             </span>
@@ -133,7 +135,12 @@ export default function AssignTeacher() {
                           )}
                         </td>
                         <td>
-                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          {b.status === 'open' ? (
+                            <div style={{ color: '#94a3b8', fontSize: '13px', fontStyle: 'italic', padding: '6px 0' }}>
+                              Not submitted yet
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                             <select
                               id={`teacher-select-${b.id}`}
                               className="select"
@@ -154,7 +161,8 @@ export default function AssignTeacher() {
                             >
                               {assigningId === b.id ? <LoadingSpinner size="sm" /> : isAssigned ? 'Reassign' : 'Assign'}
                             </button>
-                          </div>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );

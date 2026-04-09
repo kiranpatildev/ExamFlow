@@ -23,3 +23,4 @@ export const assignTeacher = (sheetId, teacherId) =>
 
 export const getAnswerSheetPdfUrl = (sheetId) =>
   `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/api/answer-sheets/${sheetId}/pdf/`;
+

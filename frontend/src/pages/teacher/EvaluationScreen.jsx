@@ -1,7 +1,13 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { getAnswerSheetDetail } from '../../api/answerSheets';
-import { submitEvaluation } from '../../api/evaluations';
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { 
+  getAnswerSheetDetails, 
+  getAnswerSheetPdf, 
+  getTeacherBundleSheets,
+  getDraftEvaluation,
+  saveDraftEvaluation,
+  submitEvaluation
+} from '../../api/teacher';
 import { getMarkingScheme } from '../../api/markingSchemes';
 import { useAuth } from '../../context/AuthContext';
 import AppSidebar from '../../components/AppSidebar';
@@ -10,52 +16,168 @@ import PDFViewer from '../../components/PDFViewer';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import toast from 'react-hot-toast';
 
-export default function EvaluationScreen() {
+class EvaluationErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '60px', textAlign: 'center', background: '#fef2f2', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>🚨</div>
+          <h2 style={{ color: '#991b1b', marginBottom: '8px' }}>Something went wrong loading this evaluation</h2>
+          <p style={{ color: '#dc2626', marginBottom: '24px', maxWidth: '500px' }}>
+            {this.state.error?.message || "An unexpected error occurred while fetching the required resources."}
+          </p>
+          <button 
+            className="btn btn-primary"
+            onClick={() => window.history.back()}
+          >
+            ← Go Back
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function EvaluationScreenInner() {
   const { sheetId } = useParams();
+  const [searchParams] = useSearchParams();
+  const bundleId = searchParams.get('bundleId');
+  const navigate = useNavigate();
+  const { auth, logout } = useAuth();
+
   const [sheet, setSheet] = useState(null);
   const [scheme, setScheme] = useState(null);
-  const [marks, setMarks] = useState({});
-  const [submitting, setSubmitting] = useState(false);
+  const [schemeError, setSchemeError] = useState(null);
+  const [pdfUrl, setPdfUrl] = useState(null);
+  const [pdfError, setPdfError] = useState(null);
+  const [existingResult, setExistingResult] = useState(null);
+  const [sheetsList, setSheetsList] = useState([]);
+  
   const [loading, setLoading] = useState(true);
-  const { auth, logout } = useAuth();
-  const navigate = useNavigate();
 
   useEffect(() => {
     const load = async () => {
+      setLoading(true);
+      setPdfError(null);
+      setSchemeError(null);
+      
       try {
-        const sRes = await getAnswerSheetDetail(sheetId);
+        // Load details (MUST SUCCEED)
+        const sRes = await getAnswerSheetDetails(sheetId);
         setSheet(sRes.data);
-        const schRes = await getMarkingScheme(sRes.data.bundle?.subject_id);
-        setScheme(schRes.data);
-      } catch {
-        toast.error('Could not load sheet details.');
+
+        // Load Scheme (Handle missing gracefully)
+        try {
+          const schRes = await getMarkingScheme(sRes.data.bundle?.subject_id);
+          setScheme(schRes.data);
+        } catch (err) {
+          setSchemeError("No marking scheme has been defined for this subject. Please ask the examination department to create one before evaluation can begin.");
+        }
+
+        // Load PDF securely (Handle missing gracefully)
+        try {
+          const pdfRes = await getAnswerSheetPdf(sheetId);
+          const objUrl = URL.createObjectURL(pdfRes.data);
+          setPdfUrl(objUrl);
+        } catch (err) {
+          if (err.response?.status === 404) {
+            setPdfError(err.response.data?.error || "PDF file not found on server. The answer sheet may not have been compiled correctly. Contact the scanning department.");
+          } else {
+            setPdfError("Failed to fetch PDF due to a server error.");
+          }
+        }
+
+        // Load Draft or Final Result
+        if (sRes.data.status === 'completed') {
+          import('../../api/evaluations').then(m => m.getEvaluation(sheetId))
+            .then(ev => { setExistingResult(ev.data); })
+            .catch(() => {});
+        } else {
+          // Fetch draft
+          const draftRes = await getDraftEvaluation(sheetId);
+          if (draftRes.data.section_results) {
+            setExistingResult(draftRes.data);
+            toast('Loaded from saved draft', { icon: '📝' });
+          } else {
+            setExistingResult(null);
+          }
+        }
+
+        // Load siblings if bundleId is specified
+        if (bundleId) {
+          const listRes = await getTeacherBundleSheets(bundleId);
+          setSheetsList(listRes.data || []);
+        }
+
+      } catch (err) {
+        // If master details fail (like sheet not found), throw to ErrorBoundary
+        throw new Error(err.response?.data?.error || "Failed to load answer sheet details.");
       } finally {
         setLoading(false);
       }
     };
+    
+    // Revoke previous url
+    if (pdfUrl) {
+      URL.revokeObjectURL(pdfUrl);
+      setPdfUrl(null);
+    }
     load();
-  }, [sheetId]);
+  }, [sheetId, bundleId]);
 
-  const handleSubmit = async () => {
+  const currentIndex = sheetsList.findIndex(s => s.id === Number(sheetId));
+  const hasPrev = currentIndex > 0;
+  const hasNext = currentIndex !== -1 && currentIndex < sheetsList.length - 1;
+
+  const navigateToSibling = (dir) => {
+    if (dir === -1 && hasPrev) navigate(`/teacher/evaluate/${sheetsList[currentIndex - 1].id}?bundleId=${bundleId}`);
+    if (dir === 1 && hasNext) navigate(`/teacher/evaluate/${sheetsList[currentIndex + 1].id}?bundleId=${bundleId}`);
+  };
+
+  const handleAutoSave = async (payload) => {
+    if (sheet?.status === 'completed') return;
+    await saveDraftEvaluation({ answer_sheet_id: sheetId, section_results: payload });
+  };
+
+  const handleSubmit = async (payload) => {
     if (!scheme) { toast.error('No marking scheme found.'); return; }
-    const sectionResults = scheme.sections.map(sec => ({
-      section_name: sec.section_name,
-      questions: sec.questions.map(q => ({
-        question_no: q.question_no,
-        marks_awarded: Number(marks[`${sec.section_name}_${q.question_no}`] ?? 0),
-        max_marks: q.max_marks,
-      })),
-    }));
+    if (pdfError) { toast.error('Cannot submit evaluation without a valid PDF.'); return; }
 
-    setSubmitting(true);
     try {
-      await submitEvaluation({ answer_sheet_id: sheetId, section_results: sectionResults });
-      toast.success('Evaluation submitted!');
-      navigate('/teacher');
+      await submitEvaluation({ answer_sheet_id: sheetId, section_results: payload });
+      toast.success('Evaluation submitted successfully!');
+      
+      setSheet(prev => ({ ...prev, status: 'completed' }));
+      
+      if (bundleId) {
+        toast('Moving to next unevaluated sheet...', { icon: '🚀' });
+        setTimeout(() => {
+           import('../../api/teacher').then(async m => {
+              const res = await m.getTeacherBundleSheets(bundleId);
+              const nextPending = res.data.find(s => s.status !== 'completed' && s.id !== Number(sheetId));
+              if (nextPending) {
+                navigate(`/teacher/evaluate/${nextPending.id}?bundleId=${bundleId}`);
+              } else {
+                toast.success('Bundle completely evaluated!');
+                navigate(`/teacher/bundle/${bundleId}`);
+              }
+           });
+        }, 1500);
+      } else {
+        navigate('/teacher');
+      }
     } catch (err) {
       toast.error(err.response?.data?.error || err.response?.data?.detail || 'Submission failed.');
-    } finally {
-      setSubmitting(false);
     }
   };
 
@@ -63,12 +185,19 @@ export default function EvaluationScreen() {
     return (
       <div className="main-layout">
         <AppSidebar role="teacher" userName={auth?.fullName || 'Teacher'} logout={logout} />
-        <div className="main-content" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <LoadingSpinner size="lg" text="Loading sheet..." />
+        <div className="main-content" style={{ display: 'grid', gridTemplateColumns: '60% 40%', height: '100%' }}>
+           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRight: '1px solid var(--color-border)', background: '#f8fafc' }}>
+             <LoadingSpinner size="lg" text="Loading PDF Viewer..." />
+           </div>
+           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--color-surface)' }}>
+             <LoadingSpinner size="lg" text="Loading Marking Scheme..." />
+           </div>
         </div>
       </div>
     );
   }
+
+  const isCompleted = sheet?.status === 'completed';
 
   return (
     <div className="main-layout">
@@ -84,91 +213,98 @@ export default function EvaluationScreen() {
           flexShrink: 0,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <button className="btn btn-ghost" style={{ padding: '5px 10px' }} onClick={() => navigate('/teacher')}>
+            <button className="btn btn-ghost" style={{ padding: '6px 12px' }} onClick={() => navigate(bundleId ? `/teacher/bundle/${bundleId}` : '/teacher')}>
               ← Back
             </button>
             <div>
-              <p style={{ fontWeight: 700, fontSize: '15px' }}>
-                Roll No: {sheet?.roll_number}
+              <p style={{ fontWeight: 700, fontSize: '16px' }}>
+                Roll No: {sheet?.roll_number} 
+                {isCompleted && <span style={{ marginLeft: '12px', background: '#dcfce7', color: '#16a34a', padding: '2px 8px', borderRadius: '4px', fontSize: '12px' }}>Completed</span>}
               </p>
-              <p style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+              <p style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>
                 {sheet?.bundle?.subject_name} — {sheet?.bundle?.subject_code}
               </p>
             </div>
           </div>
-          <button
-            id="submit-eval-btn"
-            className="btn btn-primary"
-            onClick={handleSubmit}
-            disabled={submitting || sheet?.status === 'completed'}
-            style={{ padding: '10px 24px' }}
-          >
-            {submitting
-              ? <><LoadingSpinner size="sm" /> Submitting...</>
-              : sheet?.status === 'completed' ? '✅ Already Submitted' : '✅ Submit Evaluation'}
-          </button>
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {sheetsList.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', background: 'var(--color-bg)', borderRadius: '8px', padding: '4px', border: '1px solid var(--color-border)' }}>
+                <button 
+                  className="btn btn-ghost" 
+                  disabled={!hasPrev} 
+                  onClick={() => navigateToSibling(-1)}
+                  style={{ padding: '6px 12px', fontSize: '13px' }}
+                >← Prev</button>
+                <div style={{ padding: '0 12px', fontSize: '14px', fontWeight: 500, color: 'var(--color-text-muted)' }}>
+                  Sheet {currentIndex + 1} of {sheetsList.length}
+                </div>
+                <button 
+                  className="btn btn-ghost" 
+                  disabled={!hasNext} 
+                  onClick={() => navigateToSibling(1)}
+                  style={{ padding: '6px 12px', fontSize: '13px' }}
+                >Next →</button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Split panel */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', flex: 1, overflow: 'hidden' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '60% 40%', flex: 1, overflow: 'hidden' }}>
           {/* PDF viewer */}
-          <div style={{
-            borderRight: '1px solid var(--color-border)',
-            overflow: 'auto',
-            background: '#f4f6f9',
-            padding: '20px',
-          }}>
-            <div style={{
-              background: '#fff', border: '1px solid var(--color-border)',
-              borderRadius: '10px', padding: '16px', marginBottom: '12px',
-            }}>
-              <p style={{ fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>Answer Sheet PDF</p>
-              <p style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                Roll: {sheet?.roll_number} • Pages: {sheet?.page_count || '—'}
-              </p>
-            </div>
-            {sheet?.pdf_url ? (
-              <PDFViewer url={sheet.pdf_url} />
-            ) : (
-              <div style={{
-                height: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: '#fff', border: '1px dashed var(--color-border)', borderRadius: '10px',
-                color: 'var(--color-text-muted)', flexDirection: 'column', gap: '8px',
-              }}>
-                <span style={{ fontSize: '36px', opacity: 0.3 }}>📄</span>
-                <p style={{ fontSize: '13px' }}>PDF not available</p>
+          <div style={{ borderRight: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column' }}>
+            {pdfError ? (
+              <div style={{ padding: '40px', background: '#fef2f2', borderBottom: '1px solid #fecaca', color: '#991b1b' }}>
+                <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '20px' }}>⚠️</span> PDF NOT AVAILABLE
+                </div>
+                <p style={{ fontSize: '14px', margin: 0 }}>{pdfError}</p>
               </div>
+            ) : null}
+            
+            {pdfUrl ? (
+              <div style={{ width: '100%', flex: 1 }}>
+                <PDFViewer url={pdfUrl} />
+              </div>
+            ) : (
+              !pdfError && (
+                <div style={{ width: '100%', display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', flexDirection: 'column', gap: '8px' }}>
+                  <span style={{ fontSize: '36px', opacity: 0.3 }}>📄</span>
+                  <p style={{ fontSize: '13px' }}>PDF not available securely</p>
+                </div>
+              )
             )}
           </div>
 
           {/* Marking form */}
-          <div style={{ overflow: 'auto', padding: '20px' }}>
-            {scheme ? (
-              <>
-                <h3 style={{ marginBottom: '16px' }}>Mark Entry</h3>
-                <MarkingForm
-                  scheme={scheme}
-                  marks={marks}
-                  onChange={setMarks}
-                  disabled={sheet?.status === 'completed'}
-                />
-              </>
-            ) : (
-              <div style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-muted)' }}>
-                <div style={{ fontSize: '36px', marginBottom: '12px', opacity: 0.4 }}>📋</div>
-                <p style={{ fontWeight: 600 }}>No marking scheme</p>
-                <p style={{ fontSize: '13px', marginTop: '6px' }}>
-                  Ask the exam department to create one for this subject.
-                </p>
-              </div>
-            )}
+          <div style={{ overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+            {schemeError ? (
+               <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                  <div style={{ fontSize: '48px', marginBottom: '16px', opacity: 0.5 }}>📋</div>
+                  <h3 style={{ color: 'var(--color-text)', marginBottom: '8px' }}>Missing Marking Scheme</h3>
+                  <p style={{ fontSize: '14px', lineHeight: 1.5 }}>{schemeError}</p>
+               </div>
+            ) : scheme ? (
+              <MarkingForm
+                 scheme={scheme}
+                 existingResult={existingResult}
+                 onSubmit={handleSubmit}
+                 disabled={isCompleted || !!pdfError}
+                 onAutoSave={handleAutoSave}
+              />
+            ) : null}
           </div>
         </div>
-
-        <footer className="main-footer">
-          <span>© 2024 ExamFlow. All rights reserved.</span>
-        </footer>
       </div>
     </div>
+  );
+}
+
+export default function EvaluationScreen() {
+  return (
+    <EvaluationErrorBoundary>
+      <EvaluationScreenInner />
+    </EvaluationErrorBoundary>
   );
 }

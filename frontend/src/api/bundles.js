@@ -11,3 +11,6 @@ export const getBundleById = (id) =>
 
 export const submitBundle = (id) =>
   axiosInstance.patch(`/api/bundles/${id}/submit/`);
+
+export const assignBundle = (id, teacherId) =>
+  axiosInstance.patch(`/api/bundles/${id}/assign/`, { teacher_id: teacherId });

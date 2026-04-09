@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Html5Qrcode } from 'html5-qrcode';
-import { createBundle } from '../../api/bundles';
+import { createBundle, getBundles } from '../../api/bundles';
 import { useAuth } from '../../context/AuthContext';
 import AppSidebar from '../../components/AppSidebar';
 import LoadingSpinner from '../../components/LoadingSpinner';
@@ -254,6 +254,17 @@ export default function SessionCreate() {
   const [manualJson, setManualJson] = useState('');
   const [manualError, setManualError] = useState('');
 
+  // Active bundles for resuming
+  const [activeBundles, setActiveBundles] = useState([]);
+  const [loadingBundles, setLoadingBundles] = useState(true);
+
+  useEffect(() => {
+    getBundles({ status: 'open' })
+      .then(res => setActiveBundles(res.data.results || []))
+      .catch(() => {})
+      .finally(() => setLoadingBundles(false));
+  }, []);
+
   /* ── QR scan success callback ── */
   const handleQrSuccess = useCallback((rawText) => {
     const { data, error } = parseQrPayload(rawText);
@@ -451,6 +462,61 @@ export default function SessionCreate() {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* ═══════════════════════════════════════
+              ACTIVE BUNDLES (RESUME)
+          ═══════════════════════════════════════ */}
+          {phase === 'scan' && (
+            <div style={{ marginTop: '32px' }} className="fade-in-up">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h3 style={{ margin: 0 }}>Resume Scanning</h3>
+                <span style={{
+                  background: '#e2e8f0', color: '#475569', fontSize: '12px',
+                  fontWeight: 600, padding: '2px 8px', borderRadius: '999px'
+                }}>
+                  {activeBundles.length} Active
+                </span>
+              </div>
+              
+              {loadingBundles ? (
+                <div style={{ padding: '20px', textAlign: 'center' }}><LoadingSpinner size="sm" /></div>
+              ) : activeBundles.length === 0 ? (
+                <div className="card" style={{ textAlign: 'center', padding: '30px 20px', color: 'var(--color-text-muted)' }}>
+                  <span style={{ fontSize: '24px', opacity: 0.5, display: 'block', marginBottom: '8px' }}>📦</span>
+                  <p style={{ fontSize: '13px' }}>No active bundles to resume.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: '12px' }}>
+                  {activeBundles.map(b => (
+                    <div key={b.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px' }}>
+                      <div>
+                        <p style={{ fontWeight: 700, fontSize: '15px' }}>Bundle #{b.bundle_number}</p>
+                        <p style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                          {b.subject?.code} - {b.subject?.name} • {b.total_sheets} total sheets
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button 
+                          className="btn btn-secondary"
+                          onClick={() => navigate(`/scanning/review/${b.id}`)}
+                          style={{ padding: '6px 12px', fontSize: '13px' }}
+                        >
+                          Review
+                        </button>
+                        <button 
+                          className="btn btn-primary"
+                          onClick={() => navigate(`/scanning/upload/${b.id}`)}
+                          style={{ padding: '6px 12px', fontSize: '13px' }}
+                        >
+                          Scan →
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

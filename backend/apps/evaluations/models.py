@@ -24,3 +24,23 @@ class EvaluationResult(models.Model):
 
     def __str__(self):
         return f"Evaluation for {self.answer_sheet.roll_number}"
+
+class DraftEvaluation(models.Model):
+    answer_sheet = models.OneToOneField(
+        AnswerSheet,
+        on_delete=models.CASCADE,
+        related_name='draft_evaluation'
+    )
+    teacher = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='draft_evaluations'
+    )
+    section_results = models.JSONField()
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'draft_evaluations'
+
+    def __str__(self):
+        return f"Draft for {self.answer_sheet.roll_number}"

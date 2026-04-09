@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { getAnswerSheets, assignTeacher } from '../../api/answerSheets';
+import { getBundles, assignBundle } from '../../api/bundles';
 import { getTeachers } from '../../api/auth';
 import { useAuth } from '../../context/AuthContext';
 import AppSidebar from '../../components/AppSidebar';
@@ -9,27 +8,25 @@ import LoadingSpinner from '../../components/LoadingSpinner';
 import toast from 'react-hot-toast';
 
 export default function AssignTeacher() {
-  const [sheets, setSheets] = useState([]);
+  const [bundles, setBundles] = useState([]);
   const [teachers, setTeachers] = useState([]);
-  const [selected, setSelected] = useState([]);
   const [teacherMap, setTeacherMap] = useState({});
   const [loading, setLoading] = useState(true);
-  const [assigning, setAssigning] = useState(false);
-  const [filters, setFilters] = useState({ status: '', subject_id: '' });
+  const [assigningId, setAssigningId] = useState(null);
+  const [filters, setFilters] = useState({ status: '' });
   const { auth, logout } = useAuth();
-  const navigate = useNavigate();
 
   const load = async () => {
     setLoading(true);
     try {
-      const [sRes, tRes] = await Promise.all([
-        getAnswerSheets({ status: filters.status || undefined, page_size: 100 }),
+      const [bRes, tRes] = await Promise.all([
+        getBundles({ status: 'submitted', page_size: 100 }),
         getTeachers(),
       ]);
-      setSheets(sRes.data.results || []);
+      setBundles(bRes.data.results || []);
       setTeachers(tRes.data);
     } catch {
-      // silently fail
+      toast.error('Failed to load bundles or teachers.');
     } finally {
       setLoading(false);
     }
@@ -37,45 +34,33 @@ export default function AssignTeacher() {
 
   useEffect(() => { load(); }, [filters]);
 
-  const handleSelectSheet = (id) => {
-    setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  };
-
-  const handleAssign = async () => {
-    if (selected.length === 0) { toast.error('Select at least one sheet.'); return; }
-    const assignableSheets = selected.filter(id => {
-      const sheet = sheets.find(s => s.id === id);
-      return sheet && !['under_evaluation', 'completed'].includes(sheet.status);
-    });
-    if (assignableSheets.length === 0) {
-      toast.error('Selected sheets cannot be reassigned (already under evaluation or completed).');
+  const handleAssign = async (bundleId) => {
+    const teacherId = teacherMap[bundleId];
+    if (!teacherId) {
+      toast.error('Please select a teacher first.');
       return;
     }
 
-    setAssigning(true);
-    let successCount = 0;
-    let errCount = 0;
-
-    for (const sheetId of assignableSheets) {
-      const teacherId = teacherMap[sheetId];
-      if (!teacherId) { errCount++; continue; }
-      try {
-        await assignTeacher(sheetId, teacherId);
-        successCount++;
-      } catch (err) {
-        errCount++;
-      }
+    setAssigningId(bundleId);
+    try {
+      await assignBundle(bundleId, teacherId);
+      toast.success(`Bundle assigned successfully.`);
+      await load();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Assignment failed.');
+    } finally {
+      setAssigningId(null);
     }
-
-    setAssigning(false);
-    if (successCount > 0) toast.success(`${successCount} sheet(s) assigned successfully.`);
-    if (errCount > 0) toast.error(`${errCount} assignment(s) failed.`);
-    setSelected([]);
-    setTeacherMap({});
-    await load();
   };
 
-  const eligibleSheets = sheets.filter(s => !['under_evaluation', 'completed'].includes(s.status));
+  // Derived filter logic for assignment status
+  const displayedBundles = bundles.filter(b => {
+    if (!filters.status) return true;
+    const isAssigned = b.assignment_status === 'assigned' || b.assignment_status === 'under_evaluation' || b.assignment_status === 'completed';
+    if (filters.status === 'pending') return b.assignment_status === 'pending' || !b.assignment_status;
+    if (filters.status === 'assigned') return isAssigned;
+    return true;
+  });
 
   return (
     <div className="main-layout">
@@ -83,105 +68,101 @@ export default function AssignTeacher() {
 
       <div className="main-content">
         <div className="content-body">
-        <div className="page-header">
-          <div className="page-header-left">
-            <h1>Assign Teachers</h1>
-            <p>Select answer sheets and assign them to teachers.</p>
+          <div className="page-header">
+            <div className="page-header-left">
+              <h1>Assign Teachers</h1>
+              <p>Assign entire bundles of answer sheets to teachers for evaluation.</p>
+            </div>
           </div>
-          {selected.length > 0 && (
-            <button id="bulk-assign-btn" className="btn btn-primary" onClick={handleAssign} disabled={assigning}>
-              {assigning ? <><LoadingSpinner size="sm" /> Assigning...</> : `Assign ${selected.length} Sheet(s)`}
-            </button>
+
+          {/* Filters */}
+          <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
+            <select
+              id="status-filter"
+              className="select"
+              value={filters.status}
+              onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}
+              style={{ width: '180px' }}
+            >
+              <option value="">All Statuses</option>
+              <option value="pending">Pending</option>
+              <option value="assigned">Assigned</option>
+            </select>
+          </div>
+
+          {loading ? (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '60px' }}>
+              <LoadingSpinner size="lg" />
+            </div>
+          ) : displayedBundles.length === 0 ? (
+            <div className="card" style={{ textAlign: 'center', padding: '40px' }}>
+              <span style={{ fontSize: '32px', opacity: 0.5 }}>📦</span>
+              <h3 style={{ marginTop: '16px' }}>No submitted bundles found.</h3>
+              <p style={{ color: 'var(--color-text-muted)' }}>Scanning staff need to submit bundles before they can be assigned.</p>
+            </div>
+          ) : (
+            <div className="table-wrapper">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Subject</th>
+                    <th>Bundle</th>
+                    <th>Total Sheets</th>
+                    <th>Status</th>
+                    <th>Assign To</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayedBundles.map(b => {
+                    const isAssigned = ['assigned', 'under_evaluation', 'completed'].includes(b.assignment_status);
+                    return (
+                      <tr key={b.id}>
+                        <td>
+                          <div style={{ fontWeight: 600 }}>{b.subject?.subject_name}</div>
+                          <div style={{ fontSize: '11px', color: '#64748b' }}>{b.subject?.subject_code}</div>
+                        </td>
+                        <td style={{ fontWeight: 600 }}>#{b.bundle_number}</td>
+                        <td style={{ color: '#64748b' }}>{b.total_sheets} sheets</td>
+                        <td>
+                          {isAssigned ? (
+                            <span style={{ color: 'var(--color-indigo)', fontWeight: 600, fontSize: '13px' }}>
+                              Assigned → {b.assigned_teacher_name}
+                            </span>
+                          ) : (
+                            <StatusBadge status="pending" />
+                          )}
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <select
+                              id={`teacher-select-${b.id}`}
+                              className="select"
+                              value={teacherMap[b.id] || ''}
+                              onChange={e => setTeacherMap(prev => ({ ...prev, [b.id]: e.target.value }))}
+                              style={{ padding: '6px 12px', fontSize: '13px', width: '200px' }}
+                            >
+                              <option value="">Select Teacher ▼</option>
+                              {teachers.map(t => (
+                                <option key={t.id} value={t.id}>{t.full_name}</option>
+                              ))}
+                            </select>
+                            <button
+                              className="btn btn-primary"
+                              onClick={() => handleAssign(b.id)}
+                              disabled={assigningId === b.id || !teacherMap[b.id]}
+                              style={{ padding: '6px 16px', fontSize: '13px' }}
+                            >
+                              {assigningId === b.id ? <LoadingSpinner size="sm" /> : isAssigned ? 'Reassign' : 'Assign'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
-        </div>
-
-        {/* Filters */}
-        <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
-          <select
-            id="status-filter"
-            className="select"
-            value={filters.status}
-            onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}
-            style={{ width: '180px' }}
-          >
-            <option value="">All Statuses</option>
-            <option value="pending">Pending</option>
-            <option value="assigned">Assigned</option>
-          </select>
-        </div>
-
-        {loading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '60px' }}>
-            <LoadingSpinner size="lg" />
-          </div>
-        ) : (
-          <div className="table-wrapper">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '40px' }}>
-                    <input
-                      type="checkbox"
-                      onChange={e => setSelected(e.target.checked ? eligibleSheets.map(s => s.id) : [])}
-                      checked={selected.length === eligibleSheets.length && eligibleSheets.length > 0}
-                    />
-                  </th>
-                  <th>Roll Number</th>
-                  <th>Subject</th>
-                  <th>Bundle</th>
-                  <th>Status</th>
-                  <th>Current Teacher</th>
-                  <th>Assign To</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sheets.map(s => {
-                  const isDisabled = ['under_evaluation', 'completed'].includes(s.status);
-                  return (
-                    <tr key={s.id} style={{ opacity: isDisabled ? 0.5 : 1 }}>
-                      <td>
-                        <input
-                          type="checkbox"
-                          disabled={isDisabled}
-                          checked={selected.includes(s.id)}
-                          onChange={() => handleSelectSheet(s.id)}
-                        />
-                      </td>
-                      <td style={{ fontWeight: 600 }}>{s.roll_number}</td>
-                      <td>
-                        <div>{s.subject?.subject_name}</div>
-                        <div style={{ fontSize: '11px', color: '#64748b' }}>{s.subject?.subject_code}</div>
-                      </td>
-                      <td style={{ color: '#64748b' }}>#{s.bundle_number}</td>
-                      <td><StatusBadge status={s.status} /></td>
-                      <td style={{ fontSize: '13px', color: '#94a3b8' }}>
-                        {s.assigned_teacher_detail?.full_name || '—'}
-                      </td>
-                      <td>
-                        {!isDisabled && selected.includes(s.id) ? (
-                          <select
-                            id={`teacher-select-${s.id}`}
-                            className="select"
-                            value={teacherMap[s.id] || ''}
-                            onChange={e => setTeacherMap(prev => ({ ...prev, [s.id]: e.target.value }))}
-                            style={{ padding: '5px 8px', fontSize: '13px' }}
-                          >
-                            <option value="">Select teacher...</option>
-                            {teachers.map(t => (
-                              <option key={t.id} value={t.id}>{t.full_name}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <span style={{ color: '#475569', fontSize: '13px' }}>—</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
         </div>
         <footer className="main-footer">
           <span>© 2024 ExamFlow. All rights reserved.</span>

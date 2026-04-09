@@ -1,43 +1,45 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getAnswerSheets } from '../../api/answerSheets';
+import { getTeacherBundles } from '../../api/teacher';
 import { useAuth } from '../../context/AuthContext';
 import AppSidebar from '../../components/AppSidebar';
-import StatusBadge from '../../components/StatusBadge';
 import LoadingSpinner from '../../components/LoadingSpinner';
 
 export default function TeacherDashboard() {
-  const [sheets, setSheets] = useState([]);
+  const [bundles, setBundles] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('');
+  const [navigatingBundleId, setNavigatingBundleId] = useState(null);
   const { auth, logout } = useAuth();
   const navigate = useNavigate();
 
   const load = async () => {
     setLoading(true);
     try {
-      const params = {};
-      if (statusFilter) params.status = statusFilter;
-      const res = await getAnswerSheets(params);
-      setSheets(res.data.results || []);
+      const res = await getTeacherBundles();
+      setBundles(res.data || []);
     } catch {}
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, [statusFilter]);
+  useEffect(() => { load(); }, []);
 
-  const tabs = [
-    { key: '', label: 'All' },
-    { key: 'assigned', label: 'Assigned' },
-    { key: 'under_evaluation', label: 'In Progress' },
-    { key: 'completed', label: 'Completed' },
-  ];
-
-  const counts = {
-    total: sheets.length,
-    pending: sheets.filter(s => s.status === 'assigned').length,
-    completed: sheets.filter(s => s.status === 'completed').length,
+  const handleStartEvaluating = (b) => {
+    console.log("Start Evaluating clicked. Bundle object:", b);
+    if (!b || !b.id) {
+      console.error("Bundle ID is missing from object:", b);
+      alert("Error: Bundle ID is missing.");
+      return;
+    }
+    
+    setNavigatingBundleId(b.id);
+    // Add small delay to show loading state
+    setTimeout(() => {
+      navigate(`/teacher/bundle/${b.id}`);
+    }, 100);
   };
+
+  const totalSheets = bundles.reduce((acc, b) => acc + b.total_sheets, 0);
+  const evaluatedSheets = bundles.reduce((acc, b) => acc + b.evaluated_count, 0);
 
   return (
     <div className="main-layout">
@@ -47,91 +49,91 @@ export default function TeacherDashboard() {
         <div className="content-body">
           <div className="page-header">
             <div className="page-header-left">
-              <h1>My Assignments</h1>
-              <p>Answer sheets assigned to you for evaluation.</p>
+              <h1>My Assigned Bundles</h1>
+              <p>Bundles of answer sheets assigned to you for evaluation.</p>
             </div>
           </div>
 
-          {/* Stats */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px', marginBottom: '24px' }}>
-            {[
-              { label: 'Total Assigned', value: counts.total, icon: '📄', bg: '#f7fafc' },
-              { label: 'Pending', value: counts.pending, icon: '⏳', bg: '#fffff0' },
-              { label: 'Completed', value: counts.completed, icon: '✅', bg: '#f0fff4' },
-            ].map(s => (
-              <div key={s.label} className="stat-card">
-                <div className="stat-card-icon" style={{ background: s.bg }}>{s.icon}</div>
-                <div className="stat-card-info">
-                  <div className="stat-card-value">{s.value}</div>
-                  <div className="stat-card-label">{s.label}</div>
-                </div>
+            <div className="stat-card">
+              <div className="stat-card-icon" style={{ background: '#f7fafc' }}>📦</div>
+              <div className="stat-card-info">
+                <div className="stat-card-value">{bundles.length}</div>
+                <div className="stat-card-label">Total Bundles</div>
               </div>
-            ))}
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-icon" style={{ background: '#fffff0' }}>📄</div>
+              <div className="stat-card-info">
+                <div className="stat-card-value">{totalSheets}</div>
+                <div className="stat-card-label">Total Sheets</div>
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-icon" style={{ background: '#f0fff4' }}>✅</div>
+              <div className="stat-card-info">
+                <div className="stat-card-value">{evaluatedSheets}</div>
+                <div className="stat-card-label">Evaluated</div>
+              </div>
+            </div>
           </div>
 
-          {/* Filter tabs */}
-          <div className="filter-tabs" style={{ marginBottom: '20px' }}>
-            {tabs.map(t => (
-              <button key={t.key}
-                className={`filter-tab ${statusFilter === t.key ? 'active' : ''}`}
-                onClick={() => setStatusFilter(t.key)}>
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Table */}
           {loading ? (
-            <div style={{ padding: '60px', textAlign: 'center' }}><LoadingSpinner size="lg" text="Loading..." /></div>
-          ) : sheets.length === 0 ? (
+            <div style={{ padding: '60px', textAlign: 'center' }}><LoadingSpinner size="lg" text="Loading bundles..." /></div>
+          ) : bundles.length === 0 ? (
             <div className="card">
               <div className="empty-state">
                 <div className="empty-state-icon">📭</div>
-                <h3>No sheets assigned</h3>
-                <p>Check back after the exam department assigns sheets to you.</p>
+                <h3>No bundles assigned</h3>
+                <p>Check back after the exam department assigns bundles to you.</p>
               </div>
             </div>
           ) : (
-            <div className="table-wrapper">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Roll Number</th>
-                    <th>Subject</th>
-                    <th>Bundle</th>
-                    <th>Status</th>
-                    <th>Uploaded</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sheets.map(s => (
-                    <tr key={s.id}>
-                      <td style={{ fontWeight: 600 }}>{s.roll_number}</td>
-                      <td>
-                        <div style={{ fontWeight: 500 }}>{s.subject?.subject_name}</div>
-                        <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{s.subject?.subject_code}</div>
-                      </td>
-                      <td style={{ color: 'var(--color-text-muted)' }}>#{s.bundle_number}</td>
-                      <td><StatusBadge status={s.status} /></td>
-                      <td style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>
-                        {new Date(s.uploaded_at).toLocaleDateString()}
-                      </td>
-                      <td>
-                        <button
-                          id={`eval-${s.id}`}
-                          className="btn btn-primary"
-                          style={{ padding: '5px 14px', fontSize: '13px' }}
-                          onClick={() => navigate(`/teacher/evaluate/${s.id}`)}
-                          disabled={s.status === 'pending'}
-                        >
-                          {s.status === 'completed' ? 'View' : 'Evaluate'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '20px' }}>
+              {bundles.map(b => {
+                const progressPct = b.total_sheets > 0 ? (b.evaluated_count / b.total_sheets) * 100 : 0;
+                let status = 'Not Started';
+                if (b.evaluated_count > 0 && b.evaluated_count < b.total_sheets) status = 'In Progress';
+                if (b.evaluated_count === b.total_sheets && b.total_sheets > 0) status = 'Completed';
+
+                return (
+                  <div key={b.id} className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <h3 style={{ fontSize: '18px', margin: '0 0 4px 0', color: 'var(--color-primary)' }}>{b.subject_name}</h3>
+                        <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{b.subject_code}</div>
+                      </div>
+                      <span style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>Bundle #{b.bundle_number}</span>
+                    </div>
+
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '8px' }}>
+                        <span style={{ fontWeight: 500 }}>Progress: <span style={{ color: 'var(--color-text-muted)' }}>{b.evaluated_count} / {b.total_sheets}</span></span>
+                        <span style={{ 
+                          color: status === 'Completed' ? 'var(--color-emerald)' : status === 'In Progress' ? 'var(--color-yellow)' : 'var(--color-text-muted)',
+                          fontWeight: 600 
+                        }}>{status}</span>
+                      </div>
+                      <div style={{ width: '100%', height: '8px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', background: status === 'Completed' ? 'var(--color-emerald)' : 'var(--color-indigo)', width: `${progressPct}%`, transition: 'width 0.3s ease' }}></div>
+                      </div>
+                    </div>
+
+                    <button 
+                      className="btn btn-primary" 
+                      style={{ width: '100%', marginTop: 'auto', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}
+                      disabled={navigatingBundleId === b.id}
+                      onClick={() => handleStartEvaluating(b)}
+                    >
+                      {navigatingBundleId === b.id ? (
+                        <><LoadingSpinner size="sm" /> Loading...</>
+                      ) : (
+                        status === 'Completed' ? 'View Bundle' : status === 'In Progress' ? 'Continue Evaluating →' : 'Start Evaluating →'
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

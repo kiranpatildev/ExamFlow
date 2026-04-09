@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import LoadingSpinner from './LoadingSpinner';
 
-export default function MarkingForm({ scheme, existingResult, onSubmit, disabled }) {
+export default function MarkingForm({ scheme, existingResult, onSubmit, disabled, onAutoSave }) {
   const [sectionData, setSectionData] = useState([]);
   const [grandTotal, setGrandTotal] = useState(0);
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const [savedIndicator, setSavedIndicator] = useState(false);
 
   useEffect(() => {
     if (!scheme?.sections) return;
@@ -43,6 +44,9 @@ export default function MarkingForm({ scheme, existingResult, onSubmit, disabled
   };
 
   const handleMarkChange = (sIdx, qIdx, value) => {
+    // Only numbers and decimals
+    if (value !== '' && isNaN(parseFloat(value))) return;
+    
     setSectionData(prev => {
       const copy = prev.map((s, si) => si !== sIdx ? s : {
         ...s,
@@ -54,7 +58,7 @@ export default function MarkingForm({ scheme, existingResult, onSubmit, disabled
       computeTotals(copy);
       return copy;
     });
-    // Clear error for this field
+    
     setErrors(prev => {
       const copy = { ...prev };
       delete copy[`${sIdx}-${qIdx}`];
@@ -64,35 +68,63 @@ export default function MarkingForm({ scheme, existingResult, onSubmit, disabled
 
   const validate = () => {
     const errs = {};
+    let firstErrorId = null;
     sectionData.forEach((s, si) => {
       s.questions.forEach((q, qi) => {
         const v = parseFloat(q.marks_obtained);
+        const errKey = `${si}-${qi}`;
         if (q.marks_obtained === '' || isNaN(v)) {
-          errs[`${si}-${qi}`] = 'Required';
+          errs[errKey] = 'Required';
+          if (!firstErrorId) firstErrorId = `marks-input-${errKey}`;
         } else if (v < 0 || v > q.max_marks) {
-          errs[`${si}-${qi}`] = `0–${q.max_marks}`;
+          errs[errKey] = `0–${q.max_marks}`;
+          if (!firstErrorId) firstErrorId = `marks-input-${errKey}`;
         }
       });
     });
-    return errs;
+    return { errs, firstErrorId };
   };
 
-  const handleSubmit = async () => {
-    const errs = validate();
-    if (Object.keys(errs).length > 0) {
-      setErrors(errs);
-      return;
-    }
-    setSubmitting(true);
-    const payload = sectionData.map(s => ({
+  const getPayload = () => {
+    return sectionData.map(s => ({
       section_name: s.section_name,
       questions: s.questions.map(q => ({
         question_no: q.question_no,
         max_marks: q.max_marks,
-        marks_obtained: parseFloat(q.marks_obtained),
+        marks_obtained: parseFloat(q.marks_obtained) || 0,
       })),
     }));
-    await onSubmit(payload);
+  };
+
+  const handleBlur = async () => {
+    if (disabled || !onAutoSave) return;
+    const payload = getPayload();
+    try {
+      await onAutoSave(payload);
+      setSavedIndicator(true);
+      setTimeout(() => setSavedIndicator(false), 2000);
+    } catch (err) {
+      // ignore draft save errors
+    }
+  };
+
+  const handleSubmit = async () => {
+    const { errs, firstErrorId } = validate();
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs);
+      if (firstErrorId) {
+        document.getElementById(firstErrorId)?.focus();
+        document.getElementById(firstErrorId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      return;
+    }
+
+    if (!window.confirm(`Submit evaluation?\nTotal marks: ${grandTotal} / ${scheme.total_marks}\nThis cannot be undone.`)) {
+      return;
+    }
+
+    setSubmitting(true);
+    await onSubmit(getPayload());
     setSubmitting(false);
   };
 
@@ -127,8 +159,12 @@ export default function MarkingForm({ scheme, existingResult, onSubmit, disabled
             fontSize: '14px',
             fontWeight: 700,
             color: '#818cf8',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
           }}>
             Total: {grandTotal} / {scheme.total_marks}
+            {savedIndicator && <span style={{ fontSize: '11px', color: '#10b981', marginLeft: '4px' }}>• Saved</span>}
           </div>
         </div>
       </div>
@@ -146,9 +182,7 @@ export default function MarkingForm({ scheme, existingResult, onSubmit, disabled
               overflow: 'hidden',
             }}
           >
-            {/* Section header */}
             <button
-              id={`section-toggle-${si}`}
               onClick={() => setCollapsed(prev => ({ ...prev, [si]: !prev[si] }))}
               style={{
                 width: '100%', display: 'flex', justifyContent: 'space-between',
@@ -168,7 +202,6 @@ export default function MarkingForm({ scheme, existingResult, onSubmit, disabled
               </div>
             </button>
 
-            {/* Questions */}
             {!collapsed[si] && (
               <div style={{ padding: '0 16px 16px' }}>
                 {section.questions.map((q, qi) => {
@@ -192,17 +225,18 @@ export default function MarkingForm({ scheme, existingResult, onSubmit, disabled
                         value={q.marks_obtained}
                         disabled={isCompleted}
                         onChange={e => handleMarkChange(si, qi, e.target.value)}
+                        onBlur={handleBlur}
                         style={{
                           width: '72px', padding: '6px 10px',
-                          background: hasErr ? 'rgba(239,68,68,0.1)' : 'rgba(255,255,255,0.06)',
-                          border: `1px solid ${hasErr ? '#ef4444' : 'rgba(255,255,255,0.1)'}`,
-                          borderRadius: '8px', color: '#f1f5f9', fontSize: '14px',
+                          background: hasErr ? 'rgba(239,68,68,0.1)' : 'var(--color-bg)',
+                          border: `1px solid ${hasErr ? '#ef4444' : 'var(--color-border)'}`,
+                          borderRadius: '8px', color: 'var(--color-text)', fontSize: '14px',
                           outline: 'none', textAlign: 'center',
                           opacity: isCompleted ? 0.6 : 1,
                         }}
                         placeholder="0"
                       />
-                      <span style={{ fontSize: '12px', color: '#64748b' }}>
+                      <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
                         / {q.max_marks}
                       </span>
                       {hasErr && (
@@ -223,9 +257,9 @@ export default function MarkingForm({ scheme, existingResult, onSubmit, disabled
       {!isCompleted && (
         <div style={{ padding: '16px', borderTop: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
           <button
-            id="submit-evaluation-btn"
+            id="submit-eval-btn"
             onClick={handleSubmit}
-            disabled={submitting || Object.keys(errors).length > 0}
+            disabled={submitting}
             style={{
               width: '100%', padding: '12px',
               background: submitting ? 'rgba(99,102,241,0.4)' : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
@@ -237,9 +271,7 @@ export default function MarkingForm({ scheme, existingResult, onSubmit, disabled
             }}
           >
             {submitting ? (
-              <>
-                <LoadingSpinner size="sm" /> Submitting...
-              </>
+              <><LoadingSpinner size="sm" /> Submitting...</>
             ) : (
               'Submit Evaluation'
             )}

@@ -14,12 +14,16 @@ class BundleListCreateView(APIView):
     """
 
     def get_permissions(self):
-        if self.request.method == 'POST':
-            return [IsScanningStaff()]
-        return [IsExamDept()]
+        from rest_framework.permissions import IsAuthenticated
+        return [IsAuthenticated()]
 
     def get(self, request):
+        user = request.user
         bundles = Bundle.objects.select_related('subject', 'created_by').all()
+        
+        if user.role == 'scanning_staff':
+            bundles = bundles.filter(created_by=user)
+        
         status_filter = request.query_params.get('status')
         subject_id = request.query_params.get('subject_id')
         if status_filter:
@@ -101,3 +105,36 @@ class BundleSubmitView(APIView):
         bundle.status = 'submitted'
         bundle.save()
         return Response({"status": "submitted"}, status=status.HTTP_200_OK)
+
+
+class BundleAssignView(APIView):
+    """PATCH /api/bundles/{id}/assign/"""
+    permission_classes = [IsExamDept]
+
+    def patch(self, request, pk):
+        try:
+            bundle = Bundle.objects.get(pk=pk)
+        except Bundle.DoesNotExist:
+            return Response({"error": "Bundle not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if bundle.status != 'submitted':
+            return Response({"error": "Only submitted bundles can be assigned."}, status=status.HTTP_400_BAD_REQUEST)
+
+        teacher_id = request.data.get('teacher_id')
+        if not teacher_id:
+            return Response({"error": "Teacher ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        from apps.users.models import User
+        try:
+            teacher = User.objects.get(id=teacher_id, role='teacher')
+        except User.DoesNotExist:
+            return Response({"error": "Teacher not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Update all answer sheets safely
+        sheets = bundle.answer_sheets.filter(status__in=['pending', 'assigned'])
+        if not sheets.exists():
+            return Response({"error": "No assignable sheets in this bundle."}, status=status.HTTP_400_BAD_REQUEST)
+
+        sheets.update(assigned_teacher=teacher, status='assigned')
+
+        return Response({"status": "assigned", "assigned_teacher": teacher.full_name}, status=status.HTTP_200_OK)

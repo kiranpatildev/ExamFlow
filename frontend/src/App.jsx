@@ -15,6 +15,7 @@ import BundleReview from './pages/scanning/BundleReview';
 
 // Teacher pages
 import TeacherDashboard from './pages/teacher/TeacherDashboard';
+import BundleSheetList from './pages/teacher/BundleSheetList';
 import EvaluationScreen from './pages/teacher/EvaluationScreen';
 
 // Exam dept pages
@@ -82,6 +83,11 @@ export default function App() {
           <Route path="/teacher" element={
             <ProtectedRoute requiredRole="teacher">
               <TeacherDashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/teacher/bundle/:bundleId" element={
+            <ProtectedRoute requiredRole="teacher">
+              <BundleSheetList />
             </ProtectedRoute>
           } />
           <Route path="/teacher/evaluate/:sheetId" element={

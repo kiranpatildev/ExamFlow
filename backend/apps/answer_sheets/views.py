@@ -204,7 +204,8 @@ class AnswerSheetListView(APIView):
     """GET /api/answer-sheets/"""
 
     def get_permissions(self):
-        return [IsTeacherOrExamDept()]
+        from rest_framework.permissions import IsAuthenticated
+        return [IsAuthenticated()]
 
     def get(self, request):
         user = request.user
@@ -214,6 +215,8 @@ class AnswerSheetListView(APIView):
 
         if user.role == 'teacher':
             sheets = sheets.filter(assigned_teacher=user)
+        elif user.role == 'scanning_staff':
+            sheets = sheets.filter(bundle__created_by=user)
 
         # Filters
         bundle_id = request.query_params.get('bundle_id')
@@ -241,7 +244,8 @@ class AnswerSheetDetailView(APIView):
     """GET /api/answer-sheets/{id}/"""
 
     def get_permissions(self):
-        return [IsTeacherOrExamDept()]
+        from rest_framework.permissions import IsAuthenticated
+        return [IsAuthenticated()]
 
     def get(self, request, pk):
         try:
@@ -257,6 +261,11 @@ class AnswerSheetDetailView(APIView):
                 {"error": "You are not assigned to this answer sheet."},
                 status=status.HTTP_403_FORBIDDEN
             )
+        if user.role == 'scanning_staff' and sheet.bundle.created_by != user:
+            return Response(
+                {"error": "Access denied."},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
         serializer = AnswerSheetSerializer(sheet)
         data = serializer.data
@@ -270,8 +279,8 @@ class AnswerSheetDetailView(APIView):
         data['bundle'] = {
             'id': sheet.bundle.id,
             'subject_id': sheet.bundle.subject_id,
-            'subject_name': sheet.bundle.subject.name if sheet.bundle.subject else '',
-            'subject_code': sheet.bundle.subject.code if sheet.bundle.subject else '',
+            'subject_name': sheet.bundle.subject.subject_name if sheet.bundle.subject else '',
+            'subject_code': sheet.bundle.subject.subject_code if sheet.bundle.subject else '',
         }
         return Response(data)
 
@@ -320,7 +329,8 @@ class AnswerSheetPDFView(APIView):
     """GET /api/answer-sheets/{id}/pdf/"""
 
     def get_permissions(self):
-        return [IsTeacherOrExamDept()]
+        from rest_framework.permissions import IsAuthenticated
+        return [IsAuthenticated()]
 
     def get(self, request, pk):
         try:
@@ -334,9 +344,14 @@ class AnswerSheetPDFView(APIView):
                 {"error": "You are not assigned to this answer sheet."},
                 status=status.HTTP_403_FORBIDDEN
             )
+        if user.role == 'scanning_staff' and sheet.bundle.created_by != user:
+            return Response(
+                {"error": "Access denied."},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
         if not sheet.pdf_file or not os.path.exists(sheet.pdf_file.path):
-            return Response({"error": "PDF file not found."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "PDF file not found on server. The answer sheet may not have been compiled correctly."}, status=status.HTTP_404_NOT_FOUND)
 
         # Update status to under_evaluation when a teacher opens PDF
         if user.role == 'teacher' and sheet.status == 'assigned':

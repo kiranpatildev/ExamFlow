@@ -36,6 +36,7 @@ class AnswerSheet(models.Model):
     bundle = models.ForeignKey(Bundle, on_delete=models.CASCADE, related_name='answer_sheets')
     roll_number = models.CharField(max_length=50)
     pdf_file = models.FileField(upload_to='answer_sheets/')
+    marked_pdf_file = models.FileField(upload_to='answer_sheets/', null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     assigned_teacher = models.ForeignKey(
         settings.AUTH_USER_MODEL,

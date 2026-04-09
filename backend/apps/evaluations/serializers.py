@@ -73,5 +73,5 @@ class EvaluationCreateSerializer(serializers.Serializer):
 class EvaluationResultSerializer(serializers.ModelSerializer):
     class Meta:
         model = EvaluationResult
-        fields = ['id', 'answer_sheet', 'teacher', 'section_results', 'total_marks', 'submitted_at']
+        fields = ['id', 'answer_sheet', 'teacher', 'section_results', 'total_marks', 'mark_positions', 'submitted_at']
         read_only_fields = ['id', 'submitted_at']

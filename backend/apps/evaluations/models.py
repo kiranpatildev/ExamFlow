@@ -17,6 +17,7 @@ class EvaluationResult(models.Model):
     )
     section_results = models.JSONField()
     total_marks = models.PositiveIntegerField()
+    mark_positions = models.JSONField(default=dict, blank=True)
     submitted_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -37,6 +38,7 @@ class DraftEvaluation(models.Model):
         related_name='draft_evaluations'
     )
     section_results = models.JSONField()
+    mark_positions = models.JSONField(default=dict, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

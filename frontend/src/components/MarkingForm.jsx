@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import LoadingSpinner from './LoadingSpinner';
 
-export default function MarkingForm({ scheme, existingResult, onSubmit, disabled, onAutoSave }) {
+export default function MarkingForm({ scheme, existingResult, onSubmit, disabled, onAutoSave, onMarkChange }) {
   const [sectionData, setSectionData] = useState([]);
   const [grandTotal, setGrandTotal] = useState(0);
   const [errors, setErrors] = useState({});
@@ -61,6 +61,15 @@ export default function MarkingForm({ scheme, existingResult, onSubmit, disabled
       // AND setGrandTotal is called inside computeTotals.
       return computeTotals(copy);
     });
+    
+    // Notify parent so mark labels appear on the PDF overlay
+    if (onMarkChange) {
+      const sectionName = (sectionData[sIdx]?.section_name || `section_${sIdx}`)
+        .toLowerCase().replace(/\s+/g, '_');
+      const questionNo  = sectionData[sIdx]?.questions[qIdx]?.question_no || (qIdx + 1);
+      const key = `${sectionName}_q${questionNo}`;
+      onMarkChange(key, value);
+    }
     
     setErrors(prev => {
       const copy = { ...prev };

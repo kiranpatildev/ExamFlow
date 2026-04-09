@@ -48,6 +48,8 @@ const clearAuthAndRedirect = () => {
   localStorage.removeItem('refresh_token');
   localStorage.removeItem('role');
   localStorage.removeItem('full_name');
+  // Also clear the tab-session flag so the new tab can't silently re-authenticate
+  sessionStorage.removeItem('examflow_tab_authenticated');
   window.location.href = getLoginRoute();
 };
 

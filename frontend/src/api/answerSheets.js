@@ -8,11 +8,15 @@ export const uploadImage = (formData) =>
 export const deleteImage = (imageId) =>
   axiosInstance.delete(`/api/answer-sheets/upload-image/${imageId}/`);
 
-export const finalizeAnswerSheet = (data) =>
+export const finalizeSheet = (data) =>
   axiosInstance.post('/api/answer-sheets/finalize/', data);
 
 export const getAnswerSheets = (params = {}) =>
   axiosInstance.get('/api/answer-sheets/', { params });
+
+export const getAnswerSheetDetail = (sheetId) =>
+  axiosInstance.get(`/api/answer-sheets/${sheetId}/`);
+
 
 export const assignTeacher = (sheetId, teacherId) =>
   axiosInstance.patch(`/api/answer-sheets/${sheetId}/assign/`, { teacher_id: teacherId });

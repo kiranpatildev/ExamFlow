@@ -237,6 +237,45 @@ class AnswerSheetListView(APIView):
         return paginator.get_paginated_response(serializer.data)
 
 
+class AnswerSheetDetailView(APIView):
+    """GET /api/answer-sheets/{id}/"""
+
+    def get_permissions(self):
+        return [IsTeacherOrExamDept()]
+
+    def get(self, request, pk):
+        try:
+            sheet = AnswerSheet.objects.select_related(
+                'bundle', 'bundle__subject', 'assigned_teacher'
+            ).get(pk=pk)
+        except AnswerSheet.DoesNotExist:
+            return Response({"error": "Answer sheet not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        user = request.user
+        if user.role == 'teacher' and sheet.assigned_teacher != user:
+            return Response(
+                {"error": "You are not assigned to this answer sheet."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        serializer = AnswerSheetSerializer(sheet)
+        data = serializer.data
+        # Attach a full pdf_url for the frontend
+        if sheet.pdf_file:
+            base_url = request.build_absolute_uri('/')[:-1]
+            data['pdf_url'] = f"{base_url}/media/{sheet.pdf_file}"
+        else:
+            data['pdf_url'] = None
+        # Attach bundle info the frontend needs
+        data['bundle'] = {
+            'id': sheet.bundle.id,
+            'subject_id': sheet.bundle.subject_id,
+            'subject_name': sheet.bundle.subject.name if sheet.bundle.subject else '',
+            'subject_code': sheet.bundle.subject.code if sheet.bundle.subject else '',
+        }
+        return Response(data)
+
+
 class AnswerSheetAssignView(APIView):
     """PATCH /api/answer-sheets/{id}/assign/"""
     permission_classes = [IsExamDept]

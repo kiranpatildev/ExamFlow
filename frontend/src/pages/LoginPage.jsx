@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { login as loginApi } from '../api/auth';
 import LoadingSpinner from '../components/LoadingSpinner';
 
-export default function LoginPage({ role, title, subtitle, color, icon }) {
+export default function LoginPage({ role, title, subtitle, accentColor }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -20,91 +20,114 @@ export default function LoginPage({ role, title, subtitle, color, icon }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!username.trim() || !password.trim()) {
-      setError('Please enter username and password.');
-      return;
-    }
-    setLoading(true);
-    setError('');
+    if (!username.trim() || !password.trim()) { setError('Please enter username and password.'); return; }
+    setLoading(true); setError('');
     try {
       const res = await loginApi(username.trim(), password);
-      const data = res.data;
-      if (data.role !== role) {
-        setError(`Invalid credentials for ${title}.`);
-        return;
-      }
-      login(data);
+      if (res.data.role !== role) { setError(`This portal is for ${title} only.`); return; }
+      login(res.data);
       navigate(REDIRECT[role] || '/');
     } catch (err) {
-      const msg = err.response?.data?.detail || err.response?.data?.error || 'Login failed. Check your credentials.';
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
+      setError(err.response?.data?.detail || err.response?.data?.error || 'Invalid username or password.');
+    } finally { setLoading(false); }
   };
 
   return (
     <div className="login-bg">
-      <div className="login-card fade-in-up">
-        {/* Brand */}
-        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <div style={{
-            width: '56px', height: '56px', borderRadius: '16px',
-            background: `linear-gradient(135deg, ${color}22, ${color}44)`,
-            border: `1px solid ${color}44`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '26px', margin: '0 auto 16px',
-          }}>{icon}</div>
-          <h1 style={{ fontSize: '1.6rem', marginBottom: '6px' }}>
-            <span className="gradient-text">ExamFlow</span>
+      <div style={{ width: '100%', maxWidth: '900px', display: 'flex', alignItems: 'center', gap: '60px' }}>
+
+        {/* Left — Branding */}
+        <div style={{ flex: 1, display: 'none' }} className="login-brand">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '32px' }}>
+            <div style={{
+              width: '44px', height: '44px', background: '#1a202c',
+              borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '22px',
+            }}>🎓</div>
+            <span style={{ fontSize: '22px', fontWeight: 700, color: '#1a202c' }}>ExamFlow</span>
+          </div>
+          <h1 style={{ fontSize: '2rem', color: '#1a202c', marginBottom: '12px' }}>
+            College Examination<br/>Management System
           </h1>
-          <p style={{ color: '#94a3b8', fontSize: '14px' }}>{subtitle}</p>
+          <p style={{ color: '#718096', lineHeight: 1.7 }}>
+            Digitize, manage, and evaluate answer sheets efficiently on your college LAN network.
+          </p>
         </div>
 
-        <form onSubmit={handleSubmit} autoComplete="off">
-          {error && (
-            <div className="alert alert-error" role="alert">{error}</div>
-          )}
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="username-input">Username</label>
-            <input
-              id="username-input"
-              type="text"
-              className="input"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              placeholder="Enter your username"
-              autoFocus
-            />
+        {/* Right — Login Card */}
+        <div className="login-card fade-in-up" style={{ margin: '0 auto' }}>
+          {/* Logo */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '28px' }}>
+            <div style={{
+              width: '36px', height: '36px', background: '#1a202c',
+              borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px',
+            }}>🎓</div>
+            <span style={{ fontSize: '18px', fontWeight: 700, color: '#1a202c', letterSpacing: '-0.02em' }}>ExamFlow</span>
           </div>
 
-          <div className="form-group">
-            <label className="form-label" htmlFor="password-input">Password</label>
-            <input
-              id="password-input"
-              type="password"
-              className="input"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="••••••••"
-            />
+          <h2 style={{ marginBottom: '4px', fontSize: '20px' }}>Sign in</h2>
+          <p style={{ color: 'var(--color-text-muted)', fontSize: '14px', marginBottom: '24px' }}>
+            {subtitle}
+          </p>
+
+          {/* Role pill */}
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: '6px',
+            padding: '4px 12px', borderRadius: '999px',
+            background: '#f7fafc', border: '1px solid var(--color-border)',
+            fontSize: '12px', fontWeight: 500, color: 'var(--color-text-muted)',
+            marginBottom: '20px',
+          }}>
+            <span style={{
+              width: '7px', height: '7px', borderRadius: '50%',
+              background: accentColor || '#1a202c', display: 'inline-block',
+            }} />
+            {title}
           </div>
 
-          <button
-            id="login-btn"
-            type="submit"
-            className="btn btn-primary"
-            disabled={loading}
-            style={{ width: '100%', padding: '12px', marginTop: '8px' }}
-          >
-            {loading ? <><LoadingSpinner size="sm" /> Signing in...</> : `Sign in as ${title}`}
-          </button>
-        </form>
+          <form onSubmit={handleSubmit} autoComplete="off">
+            {error && <div className="alert alert-error">{error}</div>}
 
-        <p style={{ textAlign: 'center', color: '#475569', fontSize: '12px', marginTop: '24px' }}>
-          ExamFlow — Answer Sheet Evaluation System
-        </p>
+            <div className="form-group">
+              <label className="form-label" htmlFor="username-input">Username</label>
+              <input
+                id="username-input"
+                type="text"
+                className="input"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                placeholder="Enter your username"
+                autoFocus
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="password-input">Password</label>
+              <input
+                id="password-input"
+                type="password"
+                className="input"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="Enter your password"
+              />
+            </div>
+
+            <button
+              id="login-submit-btn"
+              type="submit"
+              className="btn btn-primary"
+              disabled={loading}
+              style={{ width: '100%', padding: '11px', marginTop: '4px', fontSize: '15px' }}
+            >
+              {loading ? <><LoadingSpinner size="sm" /> Signing in...</> : `Sign in as ${title}`}
+            </button>
+          </form>
+
+          <p style={{ textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '12px', marginTop: '24px' }}>
+            © 2024 ExamFlow. College Examination System.
+          </p>
+        </div>
       </div>
     </div>
   );

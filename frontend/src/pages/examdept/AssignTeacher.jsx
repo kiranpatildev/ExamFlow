@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { getAnswerSheets, assignTeacher } from '../../api/answerSheets';
 import { getTeachers } from '../../api/auth';
 import { useAuth } from '../../context/AuthContext';
-import { Sidebar } from './ExamDashboard';
+import AppSidebar from '../../components/AppSidebar';
 import StatusBadge from '../../components/StatusBadge';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import toast from 'react-hot-toast';
@@ -79,22 +79,18 @@ export default function AssignTeacher() {
 
   return (
     <div className="main-layout">
-      <Sidebar navigate={navigate} logout={logout} auth={auth} />
+      <AppSidebar role="exam_dept" userName={auth?.fullName || 'Admin'} logout={logout} />
 
-      <main className="main-content">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '28px' }}>
-          <div>
-            <h1 className="gradient-text" style={{ marginBottom: '6px' }}>Assign Teachers</h1>
-            <p style={{ color: '#64748b' }}>Select answer sheets and assign them to teachers.</p>
+      <div className="main-content">
+        <div className="content-body">
+        <div className="page-header">
+          <div className="page-header-left">
+            <h1>Assign Teachers</h1>
+            <p>Select answer sheets and assign them to teachers.</p>
           </div>
           {selected.length > 0 && (
-            <button
-              id="bulk-assign-btn"
-              className="btn btn-primary"
-              onClick={handleAssign}
-              disabled={assigning}
-            >
-              {assigning ? <><LoadingSpinner size="sm" /> Assigning...</> : `✅ Assign ${selected.length} Sheet(s)`}
+            <button id="bulk-assign-btn" className="btn btn-primary" onClick={handleAssign} disabled={assigning}>
+              {assigning ? <><LoadingSpinner size="sm" /> Assigning...</> : `Assign ${selected.length} Sheet(s)`}
             </button>
           )}
         </div>
@@ -186,7 +182,11 @@ export default function AssignTeacher() {
             </table>
           </div>
         )}
-      </main>
+        </div>
+        <footer className="main-footer">
+          <span>© 2024 ExamFlow. All rights reserved.</span>
+        </footer>
+      </div>
     </div>
   );
 }

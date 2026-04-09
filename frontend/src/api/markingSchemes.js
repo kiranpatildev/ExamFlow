@@ -6,6 +6,10 @@ export const getMarkingSchemes = () =>
 export const getMarkingSchemeById = (id) =>
   axiosInstance.get(`/api/marking-schemes/${id}/`);
 
+export const getMarkingScheme = (subjectId) =>
+  axiosInstance.get('/api/marking-schemes/', { params: { subject_id: subjectId } });
+
+
 export const createMarkingScheme = (data) =>
   axiosInstance.post('/api/marking-schemes/', data);
 

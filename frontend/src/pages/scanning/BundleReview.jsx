@@ -1,169 +1,158 @@
-import { useState } from 'react';
-import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { submitBundle } from '../../api/bundles';
+import { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { getAnswerSheets } from '../../api/answerSheets';
-import { useEffect } from 'react';
+import { submitBundle } from '../../api/bundles';
+import { useAuth } from '../../context/AuthContext';
+import AppSidebar from '../../components/AppSidebar';
 import StatusBadge from '../../components/StatusBadge';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import toast from 'react-hot-toast';
 
 export default function BundleReview() {
   const { bundleId } = useParams();
-  const { state } = useLocation();
-  const navigate = useNavigate();
-  const bundle = state?.bundle;
-
   const [sheets, setSheets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
-  const [submitted, setSubmitted] = useState(false);
+  const { auth, logout } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await getAnswerSheets({ bundle_id: bundleId });
-        setSheets(res.data.results || []);
-      } catch {
-        setError('Failed to load sheets.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
+    getAnswerSheets({ bundle_id: bundleId })
+      .then(res => setSheets(res.data.results || []))
+      .catch(() => toast.error('Could not load sheets.'))
+      .finally(() => setLoading(false));
   }, [bundleId]);
 
   const handleSubmit = async () => {
-    if (sheets.length === 0) {
-      setError('No finalized sheets to submit.');
-      return;
-    }
+    if (sheets.length === 0) { toast.error('No sheets in this bundle.'); return; }
+    if (!window.confirm(`Submit bundle with ${sheets.length} sheet(s)? This cannot be undone.`)) return;
     setSubmitting(true);
-    setError('');
     try {
       await submitBundle(bundleId);
-      setSubmitted(true);
       toast.success('Bundle submitted successfully!');
+      navigate('/scanning');
     } catch (err) {
-      setError(err.response?.data?.error || 'Submission failed.');
+      toast.error(err.response?.data?.error || 'Submission failed.');
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="page-wrapper">
-      <header style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '16px 32px', borderBottom: '1px solid var(--color-border)',
-        background: 'var(--color-surface)', flexShrink: 0,
-      }}>
-        <span style={{ fontFamily: 'Outfit', fontWeight: 700, fontSize: '18px', color: '#10b981' }}>
-          📋 Review Bundle
-        </span>
-        <button id="back-upload-btn" className="btn btn-secondary" onClick={() => navigate(-1)}>
-          ← Back to Upload
-        </button>
-      </header>
+    <div className="main-layout">
+      <AppSidebar role="scanning_staff" userName={auth?.fullName || 'Staff'} logout={logout} />
 
-      <div style={{ flex: 1, overflow: 'auto', padding: '32px' }}>
-        <div style={{ maxWidth: '760px', margin: '0 auto' }}>
-
-          {/* Bundle info */}
-          <div className="card fade-in-up" style={{ marginBottom: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <h2 style={{ marginBottom: '4px' }}>
-                  Bundle #{bundle?.bundle_number || bundleId}
-                </h2>
-                <p style={{ color: '#64748b', fontSize: '14px' }}>
-                  {bundle?.subject?.subject_code} — {bundle?.subject?.subject_name}
-                </p>
-              </div>
-              <StatusBadge status={submitted ? 'submitted' : 'open'} />
+      <div className="main-content">
+        <div className="content-body">
+          <div className="page-header">
+            <div className="page-header-left">
+              <h1>Review Bundle</h1>
+              <p>Bundle #{bundleId} — Review all sheets before submitting.</p>
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => navigate(`/scanning/upload/${bundleId}`)}
+              >
+                ← Add More Sheets
+              </button>
+              <button
+                id="submit-bundle-btn"
+                className="btn btn-primary"
+                onClick={handleSubmit}
+                disabled={submitting || sheets.length === 0}
+              >
+                {submitting ? <><LoadingSpinner size="sm" /> Submitting...</> : `✅ Submit Bundle (${sheets.length})`}
+              </button>
             </div>
           </div>
 
-          {error && <div className="alert alert-error">{error}</div>}
+          {/* Summary */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '14px', marginBottom: '24px' }}>
+            {[
+              { label: 'Total Sheets', value: sheets.length, icon: '📄', bg: '#f7fafc' },
+              { label: 'Finalized', value: sheets.filter(s => s.status === 'finalized').length, icon: '✅', bg: '#f0fff4' },
+              { label: 'Pending', value: sheets.filter(s => s.status === 'pending').length, icon: '⏳', bg: '#fffff0' },
+            ].map(s => (
+              <div key={s.label} className="stat-card">
+                <div className="stat-card-icon" style={{ background: s.bg }}>{s.icon}</div>
+                <div className="stat-card-info">
+                  <div className="stat-card-value">{s.value}</div>
+                  <div className="stat-card-label">{s.label}</div>
+                </div>
+              </div>
+            ))}
+          </div>
 
-          {submitted && (
-            <div className="alert alert-success">
-              ✅ Bundle submitted successfully. No further changes can be made.
+          {/* Table */}
+          {loading ? (
+            <div style={{ padding: '60px', textAlign: 'center' }}>
+              <LoadingSpinner size="lg" text="Loading sheets..." />
+            </div>
+          ) : sheets.length === 0 ? (
+            <div className="card">
+              <div className="empty-state">
+                <div className="empty-state-icon">📭</div>
+                <h3>No sheets in this bundle</h3>
+                <p>Go back and upload answer sheet images first.</p>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => navigate(`/scanning/upload/${bundleId}`)}
+                  style={{ marginTop: '12px' }}
+                >
+                  ← Upload Sheets
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="table-wrapper">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Roll Number</th>
+                    <th>Pages</th>
+                    <th>Status</th>
+                    <th>Uploaded</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sheets.map((s, i) => (
+                    <tr key={s.id}>
+                      <td style={{ color: 'var(--color-text-muted)', fontWeight: 500 }}>{i + 1}</td>
+                      <td style={{ fontWeight: 600 }}>{s.roll_number}</td>
+                      <td style={{ color: 'var(--color-text-muted)' }}>{s.page_count || '—'}</td>
+                      <td><StatusBadge status={s.status} /></td>
+                      <td style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>
+                        {new Date(s.uploaded_at).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
 
-          {/* Sheets table */}
-          <div className="card fade-in-up">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h3>Finalized Answer Sheets ({sheets.length})</h3>
-              {!submitted && sheets.length > 0 && (
-                <button
-                  id="submit-bundle-btn"
-                  className="btn btn-primary"
-                  onClick={handleSubmit}
-                  disabled={submitting}
-                >
-                  {submitting ? <><LoadingSpinner size="sm" /> Submitting...</> : '✅ Submit Bundle'}
-                </button>
-              )}
-            </div>
-
-            {loading ? (
-              <div style={{ display: 'flex', justifyContent: 'center', padding: '32px' }}>
-                <LoadingSpinner size="lg" text="Loading sheets..." />
-              </div>
-            ) : sheets.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '32px', color: '#475569' }}>
-                <p>No answer sheets finalized yet.</p>
-                <button
-                  id="go-upload-btn"
-                  className="btn btn-secondary"
-                  onClick={() => navigate(-1)}
-                  style={{ marginTop: '12px' }}
-                >
-                  Go Upload Sheets
-                </button>
-              </div>
-            ) : (
-              <div className="table-wrapper">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Roll Number</th>
-                      <th>Status</th>
-                      <th>Uploaded At</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sheets.map((s, i) => (
-                      <tr key={s.id}>
-                        <td style={{ color: '#64748b' }}>{i + 1}</td>
-                        <td style={{ fontWeight: 600 }}>{s.roll_number}</td>
-                        <td><StatusBadge status={s.status} /></td>
-                        <td style={{ color: '#64748b', fontSize: '12px' }}>
-                          {new Date(s.uploaded_at).toLocaleString()}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {!submitted && (
-            <div style={{ marginTop: '16px', textAlign: 'center' }}>
+          {sheets.length > 0 && (
+            <div style={{ marginTop: '20px', textAlign: 'right' }}>
               <button
-                id="go-home-btn"
-                className="btn btn-secondary"
-                onClick={() => navigate('/scanning')}
+                id="final-submit-btn"
+                className="btn btn-primary"
+                onClick={handleSubmit}
+                disabled={submitting}
+                style={{ padding: '12px 28px', fontSize: '15px' }}
               >
-                Create New Bundle
+                {submitting
+                  ? <><LoadingSpinner size="sm" /> Submitting...</>
+                  : `✅ Submit Bundle (${sheets.length} sheets)`}
               </button>
             </div>
           )}
         </div>
+
+        <footer className="main-footer">
+          <span>© 2024 ExamFlow. All rights reserved.</span>
+        </footer>
       </div>
     </div>
   );

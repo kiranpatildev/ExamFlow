@@ -1,57 +1,34 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getAnswerSheets, getAnswerSheetPdfUrl } from '../../api/answerSheets';
-import { getMarkingSchemes } from '../../api/markingSchemes';
-import { submitEvaluation, getEvaluation } from '../../api/evaluations';
-import PDFViewer from '../../components/PDFViewer';
+import { getAnswerSheetDetail } from '../../api/answerSheets';
+import { submitEvaluation } from '../../api/evaluations';
+import { getMarkingScheme } from '../../api/markingSchemes';
+import { useAuth } from '../../context/AuthContext';
+import AppSidebar from '../../components/AppSidebar';
 import MarkingForm from '../../components/MarkingForm';
+import PDFViewer from '../../components/PDFViewer';
 import LoadingSpinner from '../../components/LoadingSpinner';
-import StatusBadge from '../../components/StatusBadge';
 import toast from 'react-hot-toast';
-import axiosInstance from '../../api/axiosInstance';
 
 export default function EvaluationScreen() {
   const { sheetId } = useParams();
-  const navigate = useNavigate();
-
   const [sheet, setSheet] = useState(null);
   const [scheme, setScheme] = useState(null);
-  const [existingEval, setExistingEval] = useState(null);
+  const [marks, setMarks] = useState({});
+  const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [pdfUrl, setPdfUrl] = useState('');
+  const { auth, logout } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     const load = async () => {
       try {
-        // Load sheet details
-        const sheetRes = await axiosInstance.get(`/api/answer-sheets/`);
-        const allSheets = sheetRes.data.results || [];
-        const found = allSheets.find(s => s.id === parseInt(sheetId));
-        if (!found) throw new Error('Sheet not found');
-        setSheet(found);
-
-        // Load marking scheme for this subject
-        const schemesRes = await getMarkingSchemes();
-        const schemes = schemesRes.data.results || schemesRes.data;
-        const matchScheme = schemes.find(sc => sc.subject?.id === found.subject?.id);
-        setScheme(matchScheme || null);
-
-        // Load existing evaluation if any
-        try {
-          const evalRes = await getEvaluation(parseInt(sheetId));
-          setExistingEval(evalRes.data);
-        } catch {
-          // no evaluation yet — that's fine
-        }
-
-        // Set PDF URL
-        const token = localStorage.getItem('access_token');
-        const pUrl = getAnswerSheetPdfUrl(sheetId);
-        setPdfUrl(pUrl);
-
-      } catch (err) {
-        setError('Failed to load evaluation screen. ' + (err.message || ''));
+        const sRes = await getAnswerSheetDetail(sheetId);
+        setSheet(sRes.data);
+        const schRes = await getMarkingScheme(sRes.data.bundle?.subject_id);
+        setScheme(schRes.data);
+      } catch {
+        toast.error('Could not load sheet details.');
       } finally {
         setLoading(false);
       }
@@ -59,92 +36,138 @@ export default function EvaluationScreen() {
     load();
   }, [sheetId]);
 
-  const handleSubmitEvaluation = async (sectionResults) => {
+  const handleSubmit = async () => {
+    if (!scheme) { toast.error('No marking scheme found.'); return; }
+    const sectionResults = scheme.sections.map(sec => ({
+      section_name: sec.section_name,
+      questions: sec.questions.map(q => ({
+        question_no: q.question_no,
+        marks_awarded: Number(marks[`${sec.section_name}_${q.question_no}`] ?? 0),
+        max_marks: q.max_marks,
+      })),
+    }));
+
+    setSubmitting(true);
     try {
-      await submitEvaluation({
-        answer_sheet_id: parseInt(sheetId),
-        section_results: sectionResults,
-      });
-      toast.success('Evaluation submitted successfully!');
-      setSheet(prev => ({ ...prev, status: 'completed' }));
-      // Reload evaluation
-      const evalRes = await getEvaluation(parseInt(sheetId));
-      setExistingEval(evalRes.data);
+      await submitEvaluation({ answer_sheet_id: sheetId, section_results: sectionResults });
+      toast.success('Evaluation submitted!');
+      navigate('/teacher');
     } catch (err) {
-      const errs = err.response?.data?.section_results || err.response?.data?.error;
-      const msg = Array.isArray(errs) ? errs.join(', ') : (errs || 'Submission failed.');
-      toast.error(msg);
-      throw err; // re-throw so MarkingForm knows it failed
+      toast.error(err.response?.data?.error || err.response?.data?.detail || 'Submission failed.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
   if (loading) {
     return (
-      <div style={{
-        height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'var(--color-bg)',
-      }}>
-        <LoadingSpinner size="lg" text="Loading evaluation screen..." />
+      <div className="main-layout">
+        <AppSidebar role="teacher" userName={auth?.fullName || 'Teacher'} logout={logout} />
+        <div className="main-content" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <LoadingSpinner size="lg" text="Loading sheet..." />
+        </div>
       </div>
     );
   }
-
-  if (error) {
-    return (
-      <div style={{ padding: '40px', textAlign: 'center' }}>
-        <div className="alert alert-error">{error}</div>
-        <button className="btn btn-secondary" onClick={() => navigate(-1)}>← Back</button>
-      </div>
-    );
-  }
-
-  const isCompleted = sheet?.status === 'completed';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--color-bg)' }}>
-      {/* Header */}
-      <header style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '12px 24px', borderBottom: '1px solid var(--color-border)',
-        background: 'var(--color-surface)', flexShrink: 0,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <button id="back-btn" className="btn btn-secondary" style={{ padding: '6px 14px' }} onClick={() => navigate(-1)}>
-            ← Back
+    <div className="main-layout">
+      <AppSidebar role="teacher" userName={auth?.fullName || 'Teacher'} logout={logout} />
+
+      <div className="main-content">
+        {/* Top bar */}
+        <div style={{
+          padding: '14px 24px',
+          borderBottom: '1px solid var(--color-border)',
+          background: 'var(--color-surface)',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          flexShrink: 0,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <button className="btn btn-ghost" style={{ padding: '5px 10px' }} onClick={() => navigate('/teacher')}>
+              ← Back
+            </button>
+            <div>
+              <p style={{ fontWeight: 700, fontSize: '15px' }}>
+                Roll No: {sheet?.roll_number}
+              </p>
+              <p style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                {sheet?.bundle?.subject_name} — {sheet?.bundle?.subject_code}
+              </p>
+            </div>
+          </div>
+          <button
+            id="submit-eval-btn"
+            className="btn btn-primary"
+            onClick={handleSubmit}
+            disabled={submitting || sheet?.status === 'completed'}
+            style={{ padding: '10px 24px' }}
+          >
+            {submitting
+              ? <><LoadingSpinner size="sm" /> Submitting...</>
+              : sheet?.status === 'completed' ? '✅ Already Submitted' : '✅ Submit Evaluation'}
           </button>
-          <div>
-            <span style={{ fontWeight: 700, color: '#f1f5f9' }}>Roll: {sheet?.roll_number}</span>
-            <span style={{ marginLeft: '12px' }}>
-              <StatusBadge status={sheet?.status} />
-            </span>
+        </div>
+
+        {/* Split panel */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', flex: 1, overflow: 'hidden' }}>
+          {/* PDF viewer */}
+          <div style={{
+            borderRight: '1px solid var(--color-border)',
+            overflow: 'auto',
+            background: '#f4f6f9',
+            padding: '20px',
+          }}>
+            <div style={{
+              background: '#fff', border: '1px solid var(--color-border)',
+              borderRadius: '10px', padding: '16px', marginBottom: '12px',
+            }}>
+              <p style={{ fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>Answer Sheet PDF</p>
+              <p style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                Roll: {sheet?.roll_number} • Pages: {sheet?.page_count || '—'}
+              </p>
+            </div>
+            {sheet?.pdf_url ? (
+              <PDFViewer url={sheet.pdf_url} />
+            ) : (
+              <div style={{
+                height: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: '#fff', border: '1px dashed var(--color-border)', borderRadius: '10px',
+                color: 'var(--color-text-muted)', flexDirection: 'column', gap: '8px',
+              }}>
+                <span style={{ fontSize: '36px', opacity: 0.3 }}>📄</span>
+                <p style={{ fontSize: '13px' }}>PDF not available</p>
+              </div>
+            )}
+          </div>
+
+          {/* Marking form */}
+          <div style={{ overflow: 'auto', padding: '20px' }}>
+            {scheme ? (
+              <>
+                <h3 style={{ marginBottom: '16px' }}>Mark Entry</h3>
+                <MarkingForm
+                  scheme={scheme}
+                  marks={marks}
+                  onChange={setMarks}
+                  disabled={sheet?.status === 'completed'}
+                />
+              </>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-muted)' }}>
+                <div style={{ fontSize: '36px', marginBottom: '12px', opacity: 0.4 }}>📋</div>
+                <p style={{ fontWeight: 600 }}>No marking scheme</p>
+                <p style={{ fontSize: '13px', marginTop: '6px' }}>
+                  Ask the exam department to create one for this subject.
+                </p>
+              </div>
+            )}
           </div>
         </div>
-        <div style={{ fontSize: '13px', color: '#64748b' }}>
-          {sheet?.subject?.subject_name} ({sheet?.subject?.subject_code})
-        </div>
-      </header>
 
-      {/* Split panels */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {/* PDF panel — 60% */}
-        <div style={{ flex: '0 0 60%', borderRight: '1px solid var(--color-border)', overflow: 'hidden' }}>
-          <PDFViewer url={pdfUrl} />
-        </div>
-
-        {/* Marking panel — 40% */}
-        <div style={{ flex: '0 0 40%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          {isCompleted && existingEval && (
-            <div className="alert alert-success" style={{ margin: '16px', borderRadius: '10px' }}>
-              ✅ Evaluated — Total: <strong>{existingEval.total_marks}</strong> marks
-            </div>
-          )}
-          <MarkingForm
-            scheme={scheme}
-            existingResult={existingEval}
-            onSubmit={handleSubmitEvaluation}
-            disabled={isCompleted}
-          />
-        </div>
+        <footer className="main-footer">
+          <span>© 2024 ExamFlow. All rights reserved.</span>
+        </footer>
       </div>
     </div>
   );

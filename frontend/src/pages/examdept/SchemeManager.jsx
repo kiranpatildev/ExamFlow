@@ -5,7 +5,7 @@ import {
   getMarkingSchemes, createMarkingScheme, updateMarkingScheme
 } from '../../api/markingSchemes';
 import { useAuth } from '../../context/AuthContext';
-import { Sidebar } from './ExamDashboard';
+import AppSidebar from '../../components/AppSidebar';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import toast from 'react-hot-toast';
 
@@ -41,7 +41,7 @@ function SectionBuilder({ sections, onChange }) {
     <div>
       {sections.map((section, si) => (
         <div key={si} style={{
-          background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+          background: '#f8fafc', border: '1px solid var(--color-border)',
           borderRadius: '10px', padding: '16px', marginBottom: '12px',
         }}>
           <div style={{ display: 'flex', gap: '10px', marginBottom: '12px', alignItems: 'center' }}>
@@ -80,7 +80,7 @@ function SectionBuilder({ sections, onChange }) {
                 onChange={e => updateQuestion(si, qi, 'max_marks', parseInt(e.target.value) || 0)}
                 style={{ width: '100px' }}
               />
-              <span style={{ fontSize: '12px', color: '#64748b', minWidth: '40px' }}>marks</span>
+              <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', minWidth: '40px' }}>marks</span>
               {section.questions.length > 1 && (
                 <button
                   id={`remove-q-${si}-${qi}`}
@@ -103,7 +103,7 @@ function SectionBuilder({ sections, onChange }) {
         <button id="add-section-btn" className="btn btn-secondary" onClick={addSection}>
           + Add Section
         </button>
-        <span style={{ fontSize: '14px', color: '#818cf8', fontWeight: 700 }}>
+        <span style={{ fontSize: '14px', color: 'var(--color-indigo)', fontWeight: 700 }}>
           Total: {totalMarks} marks
         </span>
       </div>
@@ -193,20 +193,25 @@ export default function SchemeManager() {
 
   return (
     <div className="main-layout">
-      <Sidebar navigate={navigate} logout={logout} auth={auth} />
+      <AppSidebar role="exam_dept" userName={auth?.fullName || 'Admin'} logout={logout} />
 
-      <main className="main-content">
-        <h1 className="gradient-text" style={{ marginBottom: '24px' }}>Subjects & Marking Schemes</h1>
+      <div className="main-content">
+        <div className="content-body">
+        <div className="page-header">
+          <div className="page-header-left">
+            <h1>Subjects & Marking Schemes</h1>
+            <p>Create subjects and define marking schemes for evaluation.</p>
+          </div>
+        </div>
 
         {/* Tabs */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
+        <div className="filter-tabs" style={{ marginBottom: '24px' }}>
           {['subjects', 'schemes'].map(tab => (
             <button
               key={tab}
               id={`tab-${tab}`}
-              className={`btn ${activeTab === tab ? 'btn-primary' : 'btn-secondary'}`}
+              className={`filter-tab ${activeTab === tab ? 'active' : ''}`}
               onClick={() => setActiveTab(tab)}
-              style={{ padding: '7px 20px' }}
             >
               {tab === 'subjects' ? '📚 Subjects' : '📋 Marking Schemes'}
             </button>
@@ -272,11 +277,11 @@ export default function SchemeManager() {
                 {subjects.map(s => (
                   <div key={s.id} style={{
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.05)',
+                    padding: '10px 12px', borderBottom: '1px solid var(--color-border-2)',
                   }}>
                     <div>
                       <p style={{ fontWeight: 600, fontSize: '14px' }}>{s.subject_name}</p>
-                      <p style={{ fontSize: '12px', color: '#64748b' }}>{s.subject_code} • Sem {s.semester} • {s.department}</p>
+                      <p style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{s.subject_code} • Sem {s.semester} • {s.department}</p>
                     </div>
                     <div style={{ display: 'flex', gap: '6px' }}>
                       <button
@@ -330,9 +335,9 @@ export default function SchemeManager() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
                           <p style={{ fontWeight: 600 }}>{sub.subject_name}</p>
-                          <p style={{ fontSize: '13px', color: '#64748b' }}>{sub.subject_code}</p>
+                          <p style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{sub.subject_code}</p>
                           {scheme && (
-                            <p style={{ fontSize: '13px', color: '#818cf8', marginTop: '4px' }}>
+                            <p style={{ fontSize: '13px', color: 'var(--color-indigo)', marginTop: '4px', fontWeight: 500 }}>
                               Total: {scheme.total_marks} marks • {scheme.sections?.length} sections
                             </p>
                           )}
@@ -357,7 +362,13 @@ export default function SchemeManager() {
             )}
           </div>
         )}
-      </main>
+        </div>
+        <footer className="main-footer">
+          <span>© 2024 ExamFlow. All rights reserved.</span>
+        </footer>
+      </div>
     </div>
   );
 }
+
+

@@ -1,245 +1,290 @@
-import { useState, useRef } from 'react';
-import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { uploadImage, deleteImage, finalizeAnswerSheet } from '../../api/answerSheets';
+import { useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { uploadImage, finalizeSheet } from '../../api/answerSheets';
+import { useAuth } from '../../context/AuthContext';
+import AppSidebar from '../../components/AppSidebar';
+import CameraCapture from '../../components/CameraCapture';
 import LoadingSpinner from '../../components/LoadingSpinner';
-import StatusBadge from '../../components/StatusBadge';
 import toast from 'react-hot-toast';
 
 export default function ImageUpload() {
   const { bundleId } = useParams();
-  const { state } = useLocation();
+  const { auth, logout } = useAuth();
   const navigate = useNavigate();
-  const bundle = state?.bundle;
 
-  const [currentRollNumber, setCurrentRollNumber] = useState(null);
-  const [uploadedImages, setUploadedImages] = useState([]);  // [{ id, name }]
-  const [finalizedSheets, setFinalizedSheets] = useState([]);
+  // Current sheet being assembled
+  const [rollNumber, setRollNumber] = useState('');
+  const [capturedPages, setCapturedPages] = useState([]); // { blob, filename, preview }
   const [uploading, setUploading] = useState(false);
-  const [finalizing, setFinalizing] = useState(false);
-  const [error, setError] = useState('');
-  const fileInputRef = useRef();
 
-  const isFirstPage = uploadedImages.length === 0;
+  // Completed sheets in this session
+  const [completedSheets, setCompletedSheets] = useState([]);
 
-  const handleFileSelect = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    e.target.value = '';
+  // Called by CameraCapture for each captured/selected image
+  const handleCapture = (blob, filename) => {
+    const preview = URL.createObjectURL(blob);
+    setCapturedPages(prev => [...prev, { blob, filename, preview }]);
+  };
 
-    setError('');
+  const removePage = (i) => {
+    setCapturedPages(prev => {
+      URL.revokeObjectURL(prev[i].preview);
+      return prev.filter((_, idx) => idx !== i);
+    });
+  };
+
+  const handleUploadSheet = async () => {
+    if (!rollNumber.trim()) { toast.error('Enter the student roll number first.'); return; }
+    if (capturedPages.length === 0) { toast.error('Capture at least one page first.'); return; }
+
     setUploading(true);
-
-    const formData = new FormData();
-    formData.append('bundle_id', bundleId);
-    formData.append('image', file);
-    formData.append('is_first_page', isFirstPage ? 'true' : 'false');
-    if (!isFirstPage && currentRollNumber) {
-      formData.append('roll_number', currentRollNumber);
-    }
-
     try {
-      const res = await uploadImage(formData);
-      const { image_id, roll_number } = res.data;
-      if (isFirstPage) setCurrentRollNumber(roll_number);
-      setUploadedImages(prev => [...prev, { id: image_id, name: file.name }]);
-      toast.success(isFirstPage ? `Roll detected: ${roll_number}` : `Page ${uploadedImages.length + 1} uploaded`);
+      let sheetId = null;
+      for (let i = 0; i < capturedPages.length; i++) {
+        const { blob, filename } = capturedPages[i];
+        const file = new File([blob], filename, { type: blob.type || 'image/jpeg' });
+        const formData = new FormData();
+        formData.append('bundle_id', bundleId);
+        formData.append('roll_number', rollNumber.trim());
+        formData.append('image', file);
+        formData.append('page_number', i + 1);
+        const res = await uploadImage(formData);
+        sheetId = res.data.answer_sheet_id;
+      }
+
+      // Compile all pages into a PDF
+      await finalizeSheet(sheetId);
+
+      setCompletedSheets(prev => [...prev, {
+        rollNumber: rollNumber.trim(),
+        pageCount: capturedPages.length,
+        sheetId,
+      }]);
+
+      toast.success(`Sheet for Roll ${rollNumber} uploaded & compiled!`);
+
+      // Clear for next sheet
+      capturedPages.forEach(p => URL.revokeObjectURL(p.preview));
+      setRollNumber('');
+      setCapturedPages([]);
     } catch (err) {
-      const status = err.response?.status;
-      const msg = err.response?.data?.error || 'Upload failed.';
-      if (status === 413) setError('Image too large (max 10 MB).');
-      else if (status === 415) setError('Only JPEG and PNG images are accepted.');
-      else setError(msg);
+      const msg = err.response?.data?.error
+        || err.response?.data?.roll_number?.[0]
+        || 'Upload failed. Please try again.';
+      toast.error(msg);
     } finally {
       setUploading(false);
     }
   };
 
-  const handleDeleteImage = async (imageId) => {
-    try {
-      await deleteImage(imageId);
-      setUploadedImages(prev => prev.filter(img => img.id !== imageId));
-      if (uploadedImages.length === 1) setCurrentRollNumber(null);
-      toast.success('Image removed.');
-    } catch {
-      toast.error('Failed to remove image.');
-    }
-  };
-
-  const handleFinalize = async () => {
-    if (uploadedImages.length === 0) {
-      setError('Upload at least one image before finalizing.');
-      return;
-    }
-    setFinalizing(true);
-    setError('');
-    try {
-      const res = await finalizeAnswerSheet({
-        bundle_id: parseInt(bundleId),
-        roll_number: currentRollNumber,
-        image_ids: uploadedImages.map(i => i.id),
-      });
-      setFinalizedSheets(prev => [...prev, { roll_number: currentRollNumber, id: res.data.answer_sheet_id }]);
-      setUploadedImages([]);
-      setCurrentRollNumber(null);
-      toast.success(`Answer sheet ${currentRollNumber} finalized!`);
-    } catch (err) {
-      setError(err.response?.data?.error || 'Finalization failed.');
-    } finally {
-      setFinalizing(false);
-    }
-  };
-
   return (
-    <div className="page-wrapper">
-      <header style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '16px 32px', borderBottom: '1px solid var(--color-border)',
-        background: 'var(--color-surface)', flexShrink: 0,
-      }}>
-        <div>
-          <span style={{ fontFamily: 'Outfit', fontWeight: 700, fontSize: '18px', color: '#10b981' }}>
-            📷 Upload Answer Sheet Images
-          </span>
-          {bundle && (
-            <span style={{ marginLeft: '16px', fontSize: '13px', color: '#64748b' }}>
-              Bundle #{bundle.bundle_number} — {bundle.subject?.subject_code}
-            </span>
-          )}
-        </div>
-        <button
-          id="review-bundle-btn"
-          className="btn btn-primary"
-          onClick={() => navigate(`/scanning/review/${bundleId}`, { state: { bundle, finalizedSheets } })}
-          style={{ padding: '8px 18px' }}
-        >
-          Review & Submit →
-        </button>
-      </header>
+    <div className="main-layout">
+      <AppSidebar role="scanning_staff" userName={auth?.fullName || 'Staff'} logout={logout} />
 
-      <div style={{ flex: 1, display: 'flex', gap: '0', overflow: 'hidden' }}>
-        {/* Left: Upload area */}
-        <div style={{ flex: 1, overflow: 'auto', padding: '28px 32px' }}>
-          {/* Current session */}
-          <div className="card fade-in-up" style={{ marginBottom: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <div>
-                <h3 style={{ marginBottom: '4px' }}>
-                  {currentRollNumber ? `Roll: ${currentRollNumber}` : 'New Answer Sheet'}
-                </h3>
-                <p style={{ color: '#64748b', fontSize: '13px' }}>
-                  {isFirstPage
-                    ? 'Upload the FIRST page — barcode will be detected automatically.'
-                    : `Page ${uploadedImages.length + 1} — additional pages for roll ${currentRollNumber}`}
+      <div className="main-content">
+        <div className="content-body">
+
+          {/* Header */}
+          <div className="page-header">
+            <div className="page-header-left">
+              <h1>Upload Answer Sheets</h1>
+              <p>Bundle #{bundleId} — Capture or upload images for each student's answer sheet.</p>
+            </div>
+            <button
+              id="review-btn"
+              className="btn btn-primary"
+              onClick={() => navigate(`/scanning/review/${bundleId}`)}
+              disabled={completedSheets.length === 0}
+            >
+              Review & Submit ({completedSheets.length}) →
+            </button>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '24px', alignItems: 'start' }}>
+
+            {/* Left — main capture area */}
+            <div>
+              {/* Roll number */}
+              <div className="card" style={{ marginBottom: '16px' }}>
+                <label className="form-label" htmlFor="roll-number">
+                  Student Roll Number *
+                </label>
+                <input
+                  id="roll-number"
+                  className="input"
+                  value={rollNumber}
+                  onChange={e => setRollNumber(e.target.value)}
+                  placeholder="e.g. 228089"
+                  disabled={uploading}
+                />
+                <p style={{ fontSize: '12px', color: 'var(--color-text-dim)', marginTop: '6px' }}>
+                  Enter the roll number before capturing pages.
                 </p>
               </div>
-              <span style={{
-                padding: '4px 12px', borderRadius: '999px', fontSize: '12px',
-                background: 'rgba(16,185,129,0.12)', color: '#10b981', fontWeight: 600,
-              }}>
-                {uploadedImages.length} page{uploadedImages.length !== 1 ? 's' : ''} buffered
-              </span>
-            </div>
 
-            {error && <div className="alert alert-error">{error}</div>}
+              {/* Camera / source selector */}
+              <div className="card" style={{ marginBottom: '16px' }}>
+                <h3 style={{ marginBottom: '16px' }}>Step 1 — Capture Pages</h3>
+                <CameraCapture onCapture={handleCapture} disabled={uploading} />
+              </div>
 
-            {/* Upload zone */}
-            <div
-              className="upload-zone"
-              onClick={() => !uploading && fileInputRef.current?.click()}
-              style={{ cursor: uploading ? 'not-allowed' : 'pointer', opacity: uploading ? 0.7 : 1 }}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                id="image-file-input"
-                accept="image/jpeg,image/png"
-                style={{ display: 'none' }}
-                onChange={handleFileSelect}
-              />
-              {uploading ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-                  <LoadingSpinner size="lg" />
-                  <span style={{ color: '#94a3b8' }}>Uploading & detecting barcode...</span>
+              {/* Captured pages preview */}
+              {capturedPages.length > 0 && (
+                <div className="card" style={{ marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                    <h3>
+                      Step 2 — Review Pages
+                      <span style={{
+                        marginLeft: '8px', fontSize: '12px', fontWeight: 500,
+                        background: '#ebf8ff', color: '#2b6cb0',
+                        border: '1px solid #bee3f8',
+                        padding: '2px 8px', borderRadius: '999px',
+                      }}>
+                        {capturedPages.length} page{capturedPages.length !== 1 ? 's' : ''}
+                      </span>
+                    </h3>
+                    <button
+                      className="btn btn-danger"
+                      style={{ padding: '4px 10px', fontSize: '12px' }}
+                      onClick={() => { capturedPages.forEach(p => URL.revokeObjectURL(p.preview)); setCapturedPages([]); }}
+                    >
+                      Clear All
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '10px' }}>
+                    {capturedPages.map((page, i) => (
+                      <div key={i} style={{ position: 'relative' }}>
+                        <img
+                          src={page.preview}
+                          alt={`Page ${i + 1}`}
+                          style={{
+                            width: '100%', aspectRatio: '3/4', objectFit: 'cover',
+                            borderRadius: '8px', border: '1px solid var(--color-border)',
+                          }}
+                        />
+                        <div style={{
+                          position: 'absolute', top: '4px', left: '4px',
+                          background: '#1a202c', color: '#fff',
+                          borderRadius: '4px', padding: '2px 6px',
+                          fontSize: '11px', fontWeight: 600,
+                        }}>
+                          P{i + 1}
+                        </div>
+                        <button
+                          onClick={() => removePage(i)}
+                          style={{
+                            position: 'absolute', top: '4px', right: '4px',
+                            background: 'rgba(229,62,62,0.9)', color: '#fff',
+                            border: 'none', borderRadius: '4px',
+                            width: '22px', height: '22px',
+                            cursor: 'pointer', fontSize: '12px', lineHeight: 1,
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Upload button */}
+                  <button
+                    id="upload-sheet-btn"
+                    className="btn btn-primary"
+                    onClick={handleUploadSheet}
+                    disabled={uploading || !rollNumber.trim() || capturedPages.length === 0}
+                    style={{ width: '100%', padding: '12px', marginTop: '16px', fontSize: '15px' }}
+                  >
+                    {uploading
+                      ? <><LoadingSpinner size="sm" /> Uploading & Compiling PDF...</>
+                      : `⬆ Upload Sheet — Roll ${rollNumber || '?'} (${capturedPages.length} pages)`}
+                  </button>
                 </div>
-              ) : (
-                <div>
-                  <div style={{ fontSize: '40px', marginBottom: '12px' }}>📁</div>
-                  <p style={{ color: '#94a3b8', marginBottom: '6px' }}>
-                    Click to upload {isFirstPage ? '(first page)' : '(next page)'}
+              )}
+
+              {/* Empty call-to-action if nothing captured yet */}
+              {capturedPages.length === 0 && (
+                <div style={{
+                  textAlign: 'center', padding: '24px', background: '#f8fafc',
+                  border: '1px dashed var(--color-border)', borderRadius: '10px',
+                  color: 'var(--color-text-muted)',
+                }}>
+                  <span style={{ fontSize: '28px', opacity: 0.4 }}>👆</span>
+                  <p style={{ marginTop: '8px', fontSize: '13px' }}>
+                    Choose a source above and capture pages. Then click Upload.
                   </p>
-                  <p style={{ fontSize: '12px', color: '#64748b' }}>JPEG or PNG • Max 10 MB</p>
                 </div>
               )}
             </div>
 
-            {/* Uploaded pages list */}
-            {uploadedImages.length > 0 && (
-              <div style={{ marginTop: '16px' }}>
-                <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Buffered pages:</p>
-                {uploadedImages.map((img, i) => (
-                  <div key={img.id} style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '8px 12px', background: 'rgba(255,255,255,0.03)',
-                    borderRadius: '8px', marginBottom: '4px',
+            {/* Right — completed sheets sidebar */}
+            <div>
+              <div className="card" style={{ position: 'sticky', top: '20px' }}>
+                <h3 style={{ marginBottom: '16px' }}>
+                  Completed Sheets
+                  <span style={{
+                    marginLeft: '8px', fontSize: '12px', fontWeight: 500,
+                    background: '#f0fff4', color: '#276749',
+                    border: '1px solid #c6f6d5',
+                    padding: '2px 8px', borderRadius: '999px',
                   }}>
-                    <span style={{ fontSize: '13px', color: '#94a3b8' }}>
-                      Page {i + 1}: {img.name}
-                    </span>
-                    <button
-                      id={`delete-img-${img.id}`}
-                      className="btn btn-danger"
-                      style={{ padding: '3px 10px', fontSize: '12px' }}
-                      onClick={() => handleDeleteImage(img.id)}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+                    {completedSheets.length}
+                  </span>
+                </h3>
 
-            {/* Finalize button */}
-            {uploadedImages.length > 0 && (
-              <button
-                id="finalize-sheet-btn"
-                className="btn btn-success"
-                onClick={handleFinalize}
-                disabled={finalizing}
-                style={{ width: '100%', marginTop: '16px', padding: '12px' }}
-              >
-                {finalizing ? <><LoadingSpinner size="sm" /> Compiling PDF...</> : '✅ Finalize This Answer Sheet'}
-              </button>
-            )}
+                {completedSheets.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--color-text-dim)' }}>
+                    <div style={{ fontSize: '28px', marginBottom: '6px', opacity: 0.35 }}>📄</div>
+                    <p style={{ fontSize: '13px' }}>Sheets will appear here after upload.</p>
+                  </div>
+                ) : (
+                  <>
+                    {completedSheets.map((s, i) => (
+                      <div key={i} style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        padding: '10px 0',
+                        borderBottom: i < completedSheets.length - 1 ? '1px solid var(--color-border-2)' : 'none',
+                      }}>
+                        <div>
+                          <p style={{ fontWeight: 600, fontSize: '14px' }}>Roll {s.rollNumber}</p>
+                          <p style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                            {s.pageCount} page{s.pageCount !== 1 ? 's' : ''} • PDF compiled
+                          </p>
+                        </div>
+                        <span className="badge badge-success">✓</span>
+                      </div>
+                    ))}
+
+                    <button
+                      id="go-review-btn"
+                      className="btn btn-primary"
+                      onClick={() => navigate(`/scanning/review/${bundleId}`)}
+                      style={{ width: '100%', marginTop: '16px' }}
+                    >
+                      Review & Submit →
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* Tips card */}
+              <div className="card" style={{ marginTop: '16px', padding: '16px' }}>
+                <p style={{ fontWeight: 600, fontSize: '13px', marginBottom: '8px' }}>💡 Tips</p>
+                <ul style={{ paddingLeft: '16px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: 2 }}>
+                  <li>Capture pages in order (front to back)</li>
+                  <li>Ensure the barcode on page 1 is visible</li>
+                  <li>Good lighting = better barcode detection</li>
+                  <li>USB cameras appear in the camera selector</li>
+                  <li>Phone cameras: use IP Webcam app</li>
+                </ul>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Right: Finalized sheets list */}
-        <div style={{
-          width: '280px', flexShrink: 0,
-          borderLeft: '1px solid var(--color-border)',
-          background: 'var(--color-surface)',
-          overflow: 'auto', padding: '24px 20px',
-        }}>
-          <h4 style={{ color: '#94a3b8', marginBottom: '16px', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Finalized Sheets ({finalizedSheets.length})
-          </h4>
-          {finalizedSheets.length === 0 ? (
-            <p style={{ color: '#475569', fontSize: '13px' }}>No sheets finalized yet.</p>
-          ) : (
-            finalizedSheets.map(s => (
-              <div key={s.id} style={{
-                padding: '10px 12px', background: 'rgba(16,185,129,0.07)',
-                border: '1px solid rgba(16,185,129,0.2)',
-                borderRadius: '8px', marginBottom: '8px',
-              }}>
-                <p style={{ fontSize: '14px', fontWeight: 600, color: '#34d399' }}>
-                  Roll #{s.roll_number}
-                </p>
-                <p style={{ fontSize: '12px', color: '#64748b' }}>Sheet ID: {s.id}</p>
-              </div>
-            ))
-          )}
-        </div>
+        <footer className="main-footer">
+          <span>© 2024 ExamFlow. All rights reserved.</span>
+        </footer>
       </div>
     </div>
   );

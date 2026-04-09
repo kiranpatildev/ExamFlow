@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { getReports, exportExcel, exportPdf } from '../../api/reports';
 import { getSubjects } from '../../api/markingSchemes';
 import { useAuth } from '../../context/AuthContext';
-import { Sidebar } from './ExamDashboard';
+import AppSidebar from '../../components/AppSidebar';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import toast from 'react-hot-toast';
 
@@ -21,53 +21,52 @@ function StudentCard({ student }) {
   const [open, setOpen] = useState(true);
   return (
     <div style={{
-      background: 'rgba(255,255,255,0.03)',
-      border: '1px solid rgba(255,255,255,0.08)',
-      borderRadius: '14px',
+      background: '#ffffff',
+      border: '1px solid var(--color-border)',
+      borderRadius: '12px',
       overflow: 'hidden',
-      marginBottom: '16px',
+      marginBottom: '14px',
+      boxShadow: 'var(--shadow-xs)',
     }}>
-      {/* Card header */}
       <button
         onClick={() => setOpen(o => !o)}
         style={{
           width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           padding: '14px 20px',
-          background: 'rgba(46,64,87,0.7)',
-          border: 'none', cursor: 'pointer',
-          color: '#f1f5f9',
+          background: '#f8fafc',
+          border: 'none', borderBottom: '1px solid var(--color-border)', cursor: 'pointer',
+          color: 'var(--color-text)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{
-            width: '40px', height: '40px', borderRadius: '10px',
-            background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+            width: '38px', height: '38px', borderRadius: '10px',
+            background: '#ebf4ff', border: '1px solid #c3dafe',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '16px', fontWeight: 800,
+            fontSize: '14px', fontWeight: 800, color: 'var(--color-indigo)',
           }}>
             {student.roll_number.slice(-2)}
           </div>
           <div style={{ textAlign: 'left' }}>
-            <p style={{ margin: 0, fontWeight: 700, fontSize: '16px' }}>
+            <p style={{ margin: 0, fontWeight: 700, fontSize: '15px', color: 'var(--color-text)' }}>
               Roll No: {student.roll_number}
             </p>
-            <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8' }}>
+            <p style={{ margin: 0, fontSize: '12px', color: 'var(--color-text-muted)' }}>
               {student.subject_count} subject{student.subject_count !== 1 ? 's' : ''} evaluated
             </p>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <div style={{ textAlign: 'right' }}>
-            <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8' }}>Grand Total</p>
-            <p style={{ margin: 0, fontSize: '22px', fontWeight: 800, color: '#818cf8' }}>
+            <p style={{ margin: 0, fontSize: '12px', color: 'var(--color-text-muted)' }}>Grand Total</p>
+            <p style={{ margin: 0, fontSize: '22px', fontWeight: 800, color: 'var(--color-indigo)' }}>
               {student.grand_total}
             </p>
           </div>
-          <span style={{ color: '#64748b', fontSize: '12px' }}>{open ? '▲' : '▼'}</span>
+          <span style={{ color: 'var(--color-text-dim)', fontSize: '12px' }}>{open ? '▲' : '▼'}</span>
         </div>
       </button>
 
-      {/* Subject table */}
       {open && (
         <div style={{ padding: '0 20px 16px' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '12px' }}>
@@ -76,52 +75,41 @@ function StudentCard({ student }) {
                 {['Subject Code', 'Subject Name', 'Semester', 'Total Marks', 'Evaluated On'].map(h => (
                   <th key={h} style={{
                     padding: '8px 12px', fontSize: '11px', fontWeight: 600,
-                    color: '#64748b', textAlign: 'left', textTransform: 'uppercase',
-                    letterSpacing: '0.05em', borderBottom: '1px solid rgba(255,255,255,0.06)',
+                    color: 'var(--color-text-muted)', textAlign: 'left', textTransform: 'uppercase',
+                    letterSpacing: '0.05em', borderBottom: '1px solid var(--color-border)',
                   }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {student.subjects.map((s, i) => (
-                <tr key={i} style={{ background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent' }}>
-                  <td style={{ padding: '10px 12px', fontFamily: 'monospace', color: '#818cf8', fontSize: '13px' }}>
+                <tr key={i} style={{ background: i % 2 === 0 ? '#fafbfc' : 'transparent' }}>
+                  <td style={{ padding: '10px 12px', fontFamily: 'monospace', color: 'var(--color-indigo)', fontSize: '13px' }}>
                     {s.subject_code}
                   </td>
-                  <td style={{ padding: '10px 12px', fontWeight: 500, color: '#e2e8f0', fontSize: '13px' }}>
+                  <td style={{ padding: '10px 12px', fontWeight: 500, color: 'var(--color-text)', fontSize: '13px' }}>
                     {s.subject_name}
                   </td>
-                  <td style={{ padding: '10px 12px', color: '#94a3b8', fontSize: '13px', textAlign: 'center' }}>
+                  <td style={{ padding: '10px 12px', color: 'var(--color-text-muted)', fontSize: '13px', textAlign: 'center' }}>
                     {s.semester}
                   </td>
                   <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                    <span style={{
-                      fontWeight: 700, fontSize: '15px', color: '#10b981',
-                      background: 'rgba(16,185,129,0.12)',
-                      padding: '2px 12px', borderRadius: '999px',
-                    }}>
-                      {s.total_marks}
-                    </span>
+                    <span className="badge badge-success">{s.total_marks}</span>
                   </td>
-                  <td style={{ padding: '10px 12px', color: '#64748b', fontSize: '12px' }}>
+                  <td style={{ padding: '10px 12px', color: 'var(--color-text-muted)', fontSize: '12px' }}>
                     {s.evaluated_at ? new Date(s.evaluated_at).toLocaleDateString() : '—'}
                   </td>
                 </tr>
               ))}
-              {/* Grand total row */}
-              <tr style={{ borderTop: '2px solid rgba(99,102,241,0.3)' }}>
+              <tr style={{ borderTop: '2px solid #c3dafe' }}>
                 <td colSpan={3} style={{
                   padding: '10px 12px', textAlign: 'right',
-                  fontWeight: 700, color: '#94a3b8', fontSize: '13px',
+                  fontWeight: 700, color: 'var(--color-text-muted)', fontSize: '13px',
                 }}>
                   GRAND TOTAL
                 </td>
                 <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                  <span style={{
-                    fontWeight: 800, fontSize: '18px', color: '#818cf8',
-                    background: 'rgba(99,102,241,0.15)',
-                    padding: '3px 16px', borderRadius: '999px',
-                  }}>
+                  <span className="badge badge-indigo" style={{ fontSize: '16px', padding: '4px 16px' }}>
                     {student.grand_total}
                   </span>
                 </td>
@@ -216,16 +204,14 @@ export default function Reports() {
 
   return (
     <div className="main-layout">
-      <Sidebar navigate={navigate} logout={logout} auth={auth} />
+      <AppSidebar role="exam_dept" userName={auth?.fullName || 'Admin'} logout={logout} />
 
-      <main className="main-content">
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '28px' }}>
-          <div>
-            <h1 className="gradient-text" style={{ marginBottom: '6px' }}>Evaluation Reports</h1>
-            <p style={{ color: '#64748b' }}>
-              Filter by subject, date, or roll number to generate consolidated reports.
-            </p>
+      <div className="main-content">
+        <div className="content-body">
+        <div className="page-header">
+          <div className="page-header-left">
+            <h1>Evaluation Reports</h1>
+            <p>Filter by subject, date, or roll number to generate consolidated reports.</p>
           </div>
           <div style={{ display: 'flex', gap: '10px' }}>
             <button id="export-excel-btn" className="btn btn-success" onClick={() => handleExport('excel')} disabled={!!exporting || results.length === 0}>
@@ -280,7 +266,7 @@ export default function Reports() {
         {/* View toggle */}
         {results.length > 0 && (
           <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', alignItems: 'center' }}>
-            <span style={{ fontSize: '13px', color: '#64748b' }}>View:</span>
+            <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>View:</span>
             <button
               id="view-table"
               className={`btn ${viewMode === 'table' ? 'btn-primary' : 'btn-secondary'}`}
@@ -293,7 +279,7 @@ export default function Reports() {
               style={{ padding: '5px 16px', fontSize: '13px' }}
               onClick={() => setViewMode('student')}
             >👤 Student Cards ({localStudentGroups.length})</button>
-            <span style={{ fontSize: '13px', color: '#475569', marginLeft: '8px' }}>
+            <span style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginLeft: '8px' }}>
               {results.length} result{results.length !== 1 ? 's' : ''}
             </span>
           </div>
@@ -318,18 +304,10 @@ export default function Reports() {
                   <tr key={i}>
                     <td style={{ fontWeight: 600 }}>{r.roll_number}</td>
                     <td>{r.subject_name}</td>
-                    <td style={{ fontFamily: 'monospace', color: '#818cf8' }}>{r.subject_code}</td>
-                    <td style={{ textAlign: 'center', color: '#94a3b8' }}>{r.semester}</td>
-                    <td>
-                      <span style={{
-                        fontWeight: 700, color: '#10b981',
-                        background: 'rgba(16,185,129,0.12)',
-                        padding: '2px 12px', borderRadius: '999px', fontSize: '13px',
-                      }}>
-                        {r.total_marks}
-                      </span>
-                    </td>
-                    <td style={{ fontSize: '12px', color: '#64748b' }}>
+                    <td style={{ fontFamily: 'monospace', color: 'var(--color-indigo)' }}>{r.subject_code}</td>
+                    <td style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>{r.semester}</td>
+                    <td><span className="badge badge-success">{r.total_marks}</span></td>
+                    <td style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
                       {r.evaluated_at ? new Date(r.evaluated_at).toLocaleDateString() : '—'}
                     </td>
                   </tr>
@@ -348,18 +326,25 @@ export default function Reports() {
           </div>
         )}
 
-        {/* Empty state */}
         {!loading && results.length === 0 && (
-          <div className="card" style={{ textAlign: 'center', padding: '60px', color: '#475569' }}>
-            <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
-            <h3 style={{ color: '#94a3b8', marginBottom: '8px' }}>No results yet</h3>
-            <p>Use the filters above and click "Run Report" to generate results.</p>
-            <p style={{ marginTop: '8px', fontSize: '13px', color: '#334155' }}>
-              Tip: Enter a roll number to see that student's marks across all subjects.
-            </p>
+          <div className="card">
+            <div className="empty-state">
+              <div className="empty-state-icon">📊</div>
+              <h3>No results yet</h3>
+              <p>Use the filters above and click "Run Report" to generate results.</p>
+              <p style={{ marginTop: '8px', fontSize: '13px', color: 'var(--color-text-dim)' }}>
+                Tip: Enter a roll number to see that student's marks across all subjects.
+              </p>
+            </div>
           </div>
         )}
-      </main>
+        </div>
+        <footer className="main-footer">
+          <span>© 2024 ExamFlow. All rights reserved.</span>
+        </footer>
+      </div>
     </div>
   );
 }
+
+

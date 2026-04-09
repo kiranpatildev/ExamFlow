@@ -17,9 +17,15 @@ class SubjectViewSet(viewsets.ModelViewSet):
 
 
 class MarkingSchemeViewSet(viewsets.ModelViewSet):
-    queryset = MarkingScheme.objects.select_related('subject').all()
     serializer_class = MarkingSchemeSerializer
     http_method_names = ['get', 'post', 'put', 'patch', 'head', 'options']
+
+    def get_queryset(self):
+        queryset = MarkingScheme.objects.select_related('subject').all()
+        subject_id = self.request.query_params.get('subject_id')
+        if subject_id:
+            queryset = queryset.filter(subject_id=subject_id)
+        return queryset
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update']:

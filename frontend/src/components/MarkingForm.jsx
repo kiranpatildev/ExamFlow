@@ -24,8 +24,10 @@ export default function MarkingForm({ scheme, existingResult, onSubmit, disabled
       }),
       section_total: 0,
     }));
-    computeTotals(initialSections);
-    setSectionData(initialSections);
+    // computeTotals returns the updated sections with section_total computed.
+    // MUST use the returned value — the original initialSections has section_total: 0.
+    const updatedSections = computeTotals(initialSections);
+    setSectionData(updatedSections);
   }, [scheme, existingResult]);
 
   const computeTotals = (sections) => {
@@ -55,8 +57,9 @@ export default function MarkingForm({ scheme, existingResult, onSubmit, disabled
           marks_obtained: value,
         }),
       });
-      computeTotals(copy);
-      return copy;
+      // Return computeTotals(copy) so section_total is updated in state,
+      // AND setGrandTotal is called inside computeTotals.
+      return computeTotals(copy);
     });
     
     setErrors(prev => {
@@ -145,26 +148,28 @@ export default function MarkingForm({ scheme, existingResult, onSubmit, disabled
       {/* Header */}
       <div style={{
         padding: '16px 20px',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        borderBottom: '1px solid var(--color-border)',
         flexShrink: 0,
+        background: 'var(--color-surface)',
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#f1f5f9' }}>
+          <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--color-text)' }}>
             Marking Scheme
           </h3>
           <div style={{
             padding: '6px 16px',
-            background: 'rgba(99,102,241,0.15)',
+            background: '#ebf4ff',
+            border: '1px solid #c3dafe',
             borderRadius: '999px',
             fontSize: '14px',
             fontWeight: 700,
-            color: '#818cf8',
+            color: '#5a67d8',
             display: 'flex',
             alignItems: 'center',
             gap: '8px'
           }}>
             Total: {grandTotal} / {scheme.total_marks}
-            {savedIndicator && <span style={{ fontSize: '11px', color: '#10b981', marginLeft: '4px' }}>• Saved</span>}
+            {savedIndicator && <span style={{ fontSize: '11px', color: '#38a169', marginLeft: '4px' }}>• Saved</span>}
           </div>
         </div>
       </div>
@@ -175,8 +180,8 @@ export default function MarkingForm({ scheme, existingResult, onSubmit, disabled
           <div
             key={si}
             style={{
-              background: 'rgba(255,255,255,0.03)',
-              border: '1px solid rgba(255,255,255,0.07)',
+              background: '#f8fafc',
+              border: '1px solid var(--color-border)',
               borderRadius: '12px',
               marginBottom: '12px',
               overflow: 'hidden',
@@ -187,16 +192,17 @@ export default function MarkingForm({ scheme, existingResult, onSubmit, disabled
               style={{
                 width: '100%', display: 'flex', justifyContent: 'space-between',
                 alignItems: 'center', padding: '12px 16px',
-                background: 'none', border: 'none', cursor: 'pointer',
-                color: '#e2e8f0', fontSize: '14px', fontWeight: 600,
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                color: 'var(--color-text)', fontSize: '14px', fontWeight: 600,
+                fontFamily: 'inherit',
               }}
             >
               <span>{section.section_name}</span>
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                <span style={{ fontSize: '13px', color: '#818cf8', fontWeight: 700 }}>
+                <span style={{ fontSize: '13px', color: 'var(--color-indigo)', fontWeight: 700 }}>
                   {section.section_total} marks
                 </span>
-                <span style={{ color: '#64748b', fontSize: '12px' }}>
+                <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
                   {collapsed[si] ? '▼' : '▲'}
                 </span>
               </div>
@@ -211,7 +217,7 @@ export default function MarkingForm({ scheme, existingResult, onSubmit, disabled
                     <div key={qi} style={{
                       display: 'flex', alignItems: 'center', gap: '12px',
                       padding: '8px 0',
-                      borderBottom: qi < section.questions.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+                      borderBottom: qi < section.questions.length - 1 ? '1px solid var(--color-border-2)' : 'none',
                     }}>
                       <span style={{ fontSize: '13px', color: '#94a3b8', minWidth: '80px' }}>
                         Q{q.question_no}
@@ -228,8 +234,9 @@ export default function MarkingForm({ scheme, existingResult, onSubmit, disabled
                         onBlur={handleBlur}
                         style={{
                           width: '72px', padding: '6px 10px',
-                          background: hasErr ? 'rgba(239,68,68,0.1)' : 'var(--color-bg)',
-                          border: `1px solid ${hasErr ? '#ef4444' : 'var(--color-border)'}`,
+                          background: hasErr ? '#fff5f5' : '#ffffff',
+                          border: `1px solid ${hasErr ? 'var(--color-danger)' : 'var(--color-border)'}`,
+                          color: 'var(--color-text)',
                           borderRadius: '8px', color: 'var(--color-text)', fontSize: '14px',
                           outline: 'none', textAlign: 'center',
                           opacity: isCompleted ? 0.6 : 1,
@@ -255,7 +262,7 @@ export default function MarkingForm({ scheme, existingResult, onSubmit, disabled
 
       {/* Submit */}
       {!isCompleted && (
-        <div style={{ padding: '16px', borderTop: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
+        <div style={{ padding: '16px', borderTop: '1px solid var(--color-border)', flexShrink: 0, background: 'var(--color-surface)' }}>
           <button
             id="submit-eval-btn"
             onClick={handleSubmit}

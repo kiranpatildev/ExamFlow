@@ -77,9 +77,19 @@ function EvaluationScreenInner() {
         setSheet(sRes.data);
 
         // Load Scheme (Handle missing gracefully)
+        // getMarkingScheme returns paginated { count, results: [...] }
+        // NOTE: sRes.data.bundle is the bundle PK (integer).
+        //       sRes.data.subject is the nested Subject object (from AnswerSheetSerializer).
         try {
-          const schRes = await getMarkingScheme(sRes.data.bundle?.subject_id);
-          setScheme(schRes.data);
+          const subjectId = sRes.data.subject?.id;
+          if (!subjectId) throw new Error('Subject ID not found on answer sheet');
+          const schRes = await getMarkingScheme(subjectId);
+          // Handle both paginated { results: [...] } and bare array / object responses
+          const schemeData =
+            schRes.data?.results?.[0] ||
+            (Array.isArray(schRes.data) ? schRes.data[0] : null);
+          if (!schemeData) throw new Error('No scheme found');
+          setScheme(schemeData);
         } catch (err) {
           setSchemeError("No marking scheme has been defined for this subject. Please ask the examination department to create one before evaluation can begin.");
         }
@@ -161,17 +171,19 @@ function EvaluationScreenInner() {
       
       if (bundleId) {
         toast('Moving to next unevaluated sheet...', { icon: '🚀' });
-        setTimeout(() => {
-           import('../../api/teacher').then(async m => {
-              const res = await m.getTeacherBundleSheets(bundleId);
-              const nextPending = res.data.find(s => s.status !== 'completed' && s.id !== Number(sheetId));
-              if (nextPending) {
-                navigate(`/teacher/evaluate/${nextPending.id}?bundleId=${bundleId}`);
-              } else {
-                toast.success('Bundle completely evaluated!');
-                navigate(`/teacher/bundle/${bundleId}`);
-              }
-           });
+        setTimeout(async () => {
+          try {
+            const res = await getTeacherBundleSheets(bundleId);
+            const nextPending = res.data.find(s => s.status !== 'completed' && s.id !== Number(sheetId));
+            if (nextPending) {
+              navigate(`/teacher/evaluate/${nextPending.id}?bundleId=${bundleId}`);
+            } else {
+              toast.success('Bundle completely evaluated!');
+              navigate(`/teacher/bundle/${bundleId}`);
+            }
+          } catch {
+            navigate(`/teacher/bundle/${bundleId}`);
+          }
         }, 1500);
       } else {
         navigate('/teacher');
@@ -203,7 +215,8 @@ function EvaluationScreenInner() {
     <div className="main-layout">
       <AppSidebar role="teacher" userName={auth?.fullName || 'Teacher'} logout={logout} />
 
-      <div className="main-content">
+      {/* overflow: hidden is critical — allows PDF and marking form to scroll independently */}
+      <div className="main-content" style={{ overflow: 'hidden' }}>
         {/* Top bar */}
         <div style={{
           padding: '14px 24px',
@@ -222,7 +235,8 @@ function EvaluationScreenInner() {
                 {isCompleted && <span style={{ marginLeft: '12px', background: '#dcfce7', color: '#16a34a', padding: '2px 8px', borderRadius: '4px', fontSize: '12px' }}>Completed</span>}
               </p>
               <p style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>
-                {sheet?.bundle?.subject_name} — {sheet?.bundle?.subject_code}
+               {/* NOTE: sheet.bundle is a FK integer, subject info is on sheet.subject */}
+               {sheet?.subject?.subject_name} — {sheet?.subject?.subject_code}
               </p>
             </div>
           </div>
@@ -250,30 +264,49 @@ function EvaluationScreenInner() {
           </div>
         </div>
 
-        {/* Split panel */}
-        <div style={{ display: 'grid', gridTemplateColumns: '60% 40%', flex: 1, overflow: 'hidden' }}>
-          {/* PDF viewer */}
-          <div style={{ borderRight: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column' }}>
-            {pdfError ? (
-              <div style={{ padding: '40px', background: '#fef2f2', borderBottom: '1px solid #fecaca', color: '#991b1b' }}>
-                <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '20px' }}>⚠️</span> PDF NOT AVAILABLE
-                </div>
-                <p style={{ fontSize: '14px', margin: 0 }}>{pdfError}</p>
-              </div>
-            ) : null}
-            
+        {/* min-height: 0 prevents flex item from overflowing its container */}
+        <div style={{ display: 'grid', gridTemplateColumns: '60% 40%', flex: 1, overflow: 'hidden', minHeight: 0 }}>
+          {/* ── PDF Panel ─────────────────────────────────────────────────
+               overflow:hidden + minHeight:0 are BOTH required.
+               They tell CSS Grid: constrain this cell, do not let it grow
+               beyond the grid row height. Without them, the inner
+               overflow:auto div has no bounded height → no scroll.
+          ─────────────────────────────────────────────────────────────── */}
+          <div style={{
+            borderRight: '1px solid var(--color-border)',
+            display: 'flex', flexDirection: 'column',
+            overflow: 'hidden',   /* clips at grid cell boundary           */
+            minHeight: 0,         /* allows shrinking below content height  */
+          }}>
             {pdfUrl ? (
-              <div style={{ width: '100%', flex: 1 }}>
+              /* PDF ready — viewer fills the entire left panel */
+              <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
                 <PDFViewer url={pdfUrl} />
               </div>
+            ) : pdfError ? (
+              /* PDF load failed */
+              <div style={{
+                flex: 1, display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center',
+                padding: '40px', background: '#fef2f2',
+              }}>
+                <div style={{ fontSize: '40px', marginBottom: '14px' }}>⚠️</div>
+                <h3 style={{ color: '#991b1b', marginBottom: '8px' }}>PDF Not Available</h3>
+                <p style={{
+                  color: '#dc2626', maxWidth: '360px',
+                  textAlign: 'center', fontSize: '14px', lineHeight: 1.6,
+                }}>
+                  {pdfError}
+                </p>
+              </div>
             ) : (
-              !pdfError && (
-                <div style={{ width: '100%', display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', flexDirection: 'column', gap: '8px' }}>
-                  <span style={{ fontSize: '36px', opacity: 0.3 }}>📄</span>
-                  <p style={{ fontSize: '13px' }}>PDF not available securely</p>
-                </div>
-              )
+              /* PDF still loading */
+              <div style={{
+                flex: 1, display: 'flex',
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <LoadingSpinner size="lg" text="Loading PDF…" />
+              </div>
             )}
           </div>
 

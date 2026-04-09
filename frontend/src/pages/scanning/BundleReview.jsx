@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getAnswerSheets } from '../../api/answerSheets';
-import { submitBundle } from '../../api/bundles';
+import { submitBundle } from '../../api/bundles'; // ← correct module
 import { useAuth } from '../../context/AuthContext';
 import AppSidebar from '../../components/AppSidebar';
 import StatusBadge from '../../components/StatusBadge';
@@ -17,15 +17,19 @@ export default function BundleReview() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    getAnswerSheets({ bundle_id: bundleId })
-      .then(res => setSheets(res.data.results || []))
+    getAnswerSheets({ bundle_id: bundleId, page_size: 100 })
+      .then(res => {
+        // API returns paginated { count, results: [...] }
+        setSheets(res.data.results || res.data || []);
+      })
       .catch(() => toast.error('Could not load sheets.'))
       .finally(() => setLoading(false));
   }, [bundleId]);
 
   const handleSubmit = async () => {
     if (sheets.length === 0) { toast.error('No sheets in this bundle.'); return; }
-    if (!window.confirm(`Submit bundle with ${sheets.length} sheet(s)? This cannot be undone.`)) return;
+    if (!window.confirm(`Submit bundle with ${sheets.length} sheet(s) to the exam department? This cannot be undone.`)) return;
+
     setSubmitting(true);
     try {
       await submitBundle(bundleId);
@@ -38,6 +42,12 @@ export default function BundleReview() {
     }
   };
 
+  const stats = [
+    { label: 'Total Sheets', value: sheets.length, icon: '📄', bg: '#f7fafc' },
+    { label: 'Finalized',    value: sheets.filter(s => s.status !== 'pending').length, icon: '✅', bg: '#f0fff4' },
+    { label: 'Pending',      value: sheets.filter(s => s.status === 'pending').length, icon: '⏳', bg: '#fffff0' },
+  ];
+
   return (
     <div className="main-layout">
       <AppSidebar role="scanning_staff" userName={auth?.fullName || 'Staff'} logout={logout} />
@@ -47,7 +57,7 @@ export default function BundleReview() {
           <div className="page-header">
             <div className="page-header-left">
               <h1>Review Bundle</h1>
-              <p>Bundle #{bundleId} — Review all sheets before submitting.</p>
+              <p>Bundle #{bundleId} — Verify all sheets, then submit to the exam department.</p>
             </div>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
@@ -62,18 +72,16 @@ export default function BundleReview() {
                 onClick={handleSubmit}
                 disabled={submitting || sheets.length === 0}
               >
-                {submitting ? <><LoadingSpinner size="sm" /> Submitting...</> : `✅ Submit Bundle (${sheets.length})`}
+                {submitting
+                  ? <><LoadingSpinner size="sm" /> Submitting...</>
+                  : `✅ Submit Bundle (${sheets.length} sheets)`}
               </button>
             </div>
           </div>
 
-          {/* Summary */}
+          {/* Stats */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '14px', marginBottom: '24px' }}>
-            {[
-              { label: 'Total Sheets', value: sheets.length, icon: '📄', bg: '#f7fafc' },
-              { label: 'Finalized', value: sheets.filter(s => s.status === 'finalized').length, icon: '✅', bg: '#f0fff4' },
-              { label: 'Pending', value: sheets.filter(s => s.status === 'pending').length, icon: '⏳', bg: '#fffff0' },
-            ].map(s => (
+            {stats.map(s => (
               <div key={s.label} className="stat-card">
                 <div className="stat-card-icon" style={{ background: s.bg }}>{s.icon}</div>
                 <div className="stat-card-info">
@@ -84,9 +92,9 @@ export default function BundleReview() {
             ))}
           </div>
 
-          {/* Table */}
+          {/* Content */}
           {loading ? (
-            <div style={{ padding: '60px', textAlign: 'center' }}>
+            <div style={{ textAlign: 'center', padding: '60px' }}>
               <LoadingSpinner size="lg" text="Loading sheets..." />
             </div>
           ) : sheets.length === 0 ? (
@@ -105,48 +113,46 @@ export default function BundleReview() {
               </div>
             </div>
           ) : (
-            <div className="table-wrapper">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Roll Number</th>
-                    <th>Pages</th>
-                    <th>Status</th>
-                    <th>Uploaded</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sheets.map((s, i) => (
-                    <tr key={s.id}>
-                      <td style={{ color: 'var(--color-text-muted)', fontWeight: 500 }}>{i + 1}</td>
-                      <td style={{ fontWeight: 600 }}>{s.roll_number}</td>
-                      <td style={{ color: 'var(--color-text-muted)' }}>{s.page_count || '—'}</td>
-                      <td><StatusBadge status={s.status} /></td>
-                      <td style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>
-                        {new Date(s.uploaded_at).toLocaleString()}
-                      </td>
+            <>
+              <div className="table-wrapper">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Roll Number</th>
+                      <th>Status</th>
+                      <th>Uploaded</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  </thead>
+                  <tbody>
+                    {sheets.map((s, i) => (
+                      <tr key={s.id}>
+                        <td style={{ color: 'var(--color-text-muted)' }}>{i + 1}</td>
+                        <td style={{ fontWeight: 600 }}>{s.roll_number}</td>
+                        <td><StatusBadge status={s.status} /></td>
+                        <td style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>
+                          {new Date(s.uploaded_at).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
-          {sheets.length > 0 && (
-            <div style={{ marginTop: '20px', textAlign: 'right' }}>
-              <button
-                id="final-submit-btn"
-                className="btn btn-primary"
-                onClick={handleSubmit}
-                disabled={submitting}
-                style={{ padding: '12px 28px', fontSize: '15px' }}
-              >
-                {submitting
-                  ? <><LoadingSpinner size="sm" /> Submitting...</>
-                  : `✅ Submit Bundle (${sheets.length} sheets)`}
-              </button>
-            </div>
+              <div style={{ marginTop: '20px', textAlign: 'right' }}>
+                <button
+                  id="final-submit-btn"
+                  className="btn btn-primary"
+                  onClick={handleSubmit}
+                  disabled={submitting}
+                  style={{ padding: '12px 28px', fontSize: '15px' }}
+                >
+                  {submitting
+                    ? <><LoadingSpinner size="sm" /> Submitting...</>
+                    : `✅ Submit Bundle (${sheets.length} sheets)`}
+                </button>
+              </div>
+            </>
           )}
         </div>
 
